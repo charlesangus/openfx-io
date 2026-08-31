@@ -382,11 +382,11 @@ if(${SEEXPR2_FOUND})
   message(STATUS "  Adding SeExpr nodes")
   target_include_directories(IO
     PUBLIC
-      ${SEEXPR2_INCLUDES}
+      ${SEEXPR2_INCLUDE_DIR}
   )
   target_link_libraries(IO
     PUBLIC
-      ${SEEXPR2_LIBRARIES}
+      ${SEEXPR2_LIBRARY}
   )
 else()
   message(STATUS "  Not adding SeExpr nodes")
