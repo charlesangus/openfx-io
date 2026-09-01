@@ -139,6 +139,9 @@ colorSpaceName(OCIO::ConstConfigRcPtr config,
         } else if ((cs = config->getColorSpace("VD16"))) {
             // VD16 in blender
             return cs->getName();
+        } else if ((cs = config->getColorSpace("sRGB - Display"))) {
+            // sRGB - Display in the aces 1.3 and aces 2.0 built-in configs
+            return cs->getName();
         }
     } else if (!strcmp(colorSpaceNameDefault, "AdobeRGB") || !strcmp(colorSpaceNameDefault, "adobergb")) {
         if ((cs = config->getColorSpace("AdobeRGB"))) {
@@ -166,6 +169,9 @@ colorSpaceName(OCIO::ConstConfigRcPtr config,
             return cs->getName();
         } else if ((cs = config->getColorSpace("hd10"))) {
             // hd10 in spi-anim and spi-vfx
+            return cs->getName();
+        } else if ((cs = config->getColorSpace("Camera Rec.709"))) {
+            // Camera Rec.709 in the aces 2.0 studio config (absent from the cg config)
             return cs->getName();
         }
     } else if (!strcmp(colorSpaceNameDefault, "KodakLog") || !strcmp(colorSpaceNameDefault, "kodaklog")) {
@@ -244,6 +250,34 @@ canonicalizeColorSpace(OCIO::ConstConfigRcPtr config,
         return OCIO::ROLE_TEXTURE_PAINT;
     } else if (inputSpaceIndex == mattepaintcs) {
         return OCIO::ROLE_MATTE_PAINT;
+    }
+
+    return csname;
+}
+
+// Returns csname if the config knows it, else the closest thing the config does
+// have. scene_linear is preferred over the historical "first colorspace in the
+// config" fallback because colorspace 0 is display-referred (sRGB - Display) in
+// the aces built-in configs, and substituting a display space for a scene space
+// silently changes pixels rather than failing.
+static string
+existingColorSpaceOrFallback(OCIO::ConstConfigRcPtr config,
+                             const string& csname)
+{
+    if (!config) {
+        return csname;
+    }
+    if (config->getIndexForColorSpace(csname.c_str()) >= 0) {
+        return csname;
+    }
+    if (config->getIndexForColorSpace(OCIO::ROLE_SCENE_LINEAR) >= 0) {
+        return OCIO::ROLE_SCENE_LINEAR;
+    }
+    if (config->getIndexForColorSpace(OCIO::ROLE_DEFAULT) >= 0) {
+        return OCIO::ROLE_DEFAULT;
+    }
+    if (config->getNumColorSpaces() > 0) {
+        return config->getColorSpaceNameByIndex(0);
     }
 
     return csname;
@@ -962,7 +996,7 @@ GenericOCIO::changedParam(const InstanceChangedArgs& args,
                     cs = _config->getColorSpace(_config->getColorSpaceNameByIndex(0));
                 }
                 outputSpaceName = cs ? cs->getName() : OCIO::ROLE_DEFAULT;
-                _outputSpace->setValue(OCIO::ROLE_DEFAULT);
+                _outputSpace->setValue(outputSpaceName);
             }
         }
         outputCheck(args.time);
@@ -1331,7 +1365,7 @@ GenericOCIO::describeInContextInput(ImageEffectDescriptor& desc,
     }
     string inputSpaceName, outputSpaceName;
     if (config) {
-        inputSpaceName = canonicalizeColorSpace(config, colorSpaceName(config, inputSpaceNameDefault));
+        inputSpaceName = existingColorSpaceOrFallback(config, canonicalizeColorSpace(config, colorSpaceName(config, inputSpaceNameDefault)));
     }
 
     ////////// OCIO config file
@@ -1421,7 +1455,7 @@ GenericOCIO::describeInContextOutput(ImageEffectDescriptor& desc,
     }
     string outputSpaceName;
     if (config) {
-        outputSpaceName = canonicalizeColorSpace(config, colorSpaceName(config, outputSpaceNameDefault));
+        outputSpaceName = existingColorSpaceOrFallback(config, canonicalizeColorSpace(config, colorSpaceName(config, outputSpaceNameDefault)));
     }
 
     ///////////Output Color-space
