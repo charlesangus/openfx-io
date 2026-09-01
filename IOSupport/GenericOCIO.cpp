@@ -219,6 +219,13 @@ canonicalizeColorSpace(OCIO::ConstConfigRcPtr config,
     const int texturepaintcs = config->getIndexForColorSpace(OCIO::ROLE_TEXTURE_PAINT);
     const int mattepaintcs = config->getIndexForColorSpace(OCIO::ROLE_MATTE_PAINT);
     int inputSpaceIndex = config->getIndexForColorSpace(csname.c_str());
+    if (inputSpaceIndex < 0) {
+        // getIndexForColorSpace() returns -1 both for a name the config does not
+        // know and for a role the config does not define, so an unknown csname
+        // would otherwise match the first undefined role below and be
+        // "canonicalized" into a role name that is guaranteed not to resolve.
+        return csname;
+    }
     if (inputSpaceIndex == scenelinearcs) {
         return OCIO::ROLE_SCENE_LINEAR;
     } else if (inputSpaceIndex == defaultcs) {
