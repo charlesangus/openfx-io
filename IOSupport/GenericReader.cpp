@@ -2159,6 +2159,15 @@ GenericReaderPlugin::changedParam(const InstanceChangedArgs& args,
 
         _startingTime->setValue(oFirst);
         _startingTime->setDefault(oFirst);
+
+        // kParamStartingTime and kParamTimeOffset are two spellings of one
+        // mapping (timeOffset == startingTime - firstFrame); getTimeDomain()
+        // reads the former while getSequenceTime() reads the latter, so a
+        // timeOffset left over from the previous file makes the two disagree
+        // and every frame of the new sequence decodes out of range. Both
+        // firstFrame and startingTime were just set to oFirst above, so the
+        // offset that agrees with them is 0.
+        _timeOffset->setValue(0);
     } else if ((paramName == kParamFirstFrame) && (args.reason == eChangeUserEdit)) {
         int first;
         int oFirst, oLast;
