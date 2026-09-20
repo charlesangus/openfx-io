@@ -357,7 +357,6 @@ private:
     virtual void* allocateEncodePlanesUserData() OVERRIDE FINAL;
     virtual void destroyEncodePlanesUserData(void* data) OVERRIDE FINAL;
     virtual bool isImageFile(const string& fileExtension) const OVERRIDE FINAL;
-    virtual PreMultiplicationEnum getExpectedInputPremultiplication() const OVERRIDE FINAL { return eImagePreMultiplied; }
 
     virtual bool displayWindowSupportedByFormat(const string& filename) const OVERRIDE FINAL;
 
@@ -1070,10 +1069,9 @@ WriteOIIOPlugin::beginEncodeParts(void* user_data,
     }
 
     spec.attribute("oiio:BitsPerSample", bitsPerSample);
-    // oiio:UnassociatedAlpha should be set if the data buffer is unassociated/unpremultiplied.
-    // However, WriteOIIO::getExpectedInputPremultiplication() stated that input to the encode()
-    // function should always be premultiplied/associated
-    // spec.attribute("oiio:UnassociatedAlpha", premultiply);
+    // Without this, OIIO divides RGB by alpha on the way out for formats it
+    // treats as unassociated (PNG, TGA, WebP); the buffer must be written as-is.
+    spec.attribute("oiio:UnassociatedAlpha", 1);
 #ifdef OFX_IO_USING_OCIO
     string ocioColorspace;
     _ocio->getOutputColorspaceAtTime(time, ocioColorspace);

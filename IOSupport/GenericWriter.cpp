@@ -121,11 +121,9 @@ enum FormatTypeEnum {
 
 #define kParamInputPremult "inputPremult"
 #define kParamInputPremultLabel "Input Premult"
-#define kParamInputPremultHint                                                                                 \
-    "Input is considered to have this premultiplication state.\n"                                              \
-    "Colorspace conversion is done on the input RGB data, even if it is premultiplied, "                       \
-    "and may thus give a wrong result if the input is premultiplied and the target colorspace is nonlinear.\n" \
-    "This is set automatically from the input stream information, but can be adjusted if this information is wrong."
+#define kParamInputPremultHint                                                                                    \
+    "Has no effect: the input pixels are written exactly as they are, whatever their premultiplication state.\n" \
+    "Colorspace conversion is done on the input RGB data as-is; unpremultiply first if that is what you need."
 #define kParamInputPremultOptionOpaqueHint "The image is opaque and so has no premultiplication state, as if the alpha component in all pixels were set to the white point.", "opaque"
 #define kParamInputPremultOptionPreMultipliedHint "The image is premultiplied by its alpha (also called \"associated alpha\").", "premult"
 #define kParamInputPremultOptionUnPreMultipliedHint "The image is unpremultiplied (also called \"unassociated alpha\").", "unpremult"
@@ -184,7 +182,6 @@ GenericWriterPlugin::GenericWriterPlugin(OfxImageEffectHandle handle,
     , _outputFormat(NULL)
     , _outputFormatSize(NULL)
     , _outputFormatPar(NULL)
-    , _premult(NULL)
     , _clipToRoD(NULL)
     , _sublabel(NULL)
     , _processChannels()
@@ -214,8 +211,6 @@ GenericWriterPlugin::GenericWriterPlugin(OfxImageEffectHandle handle,
     _outputFormat = fetchChoiceParam(kParamOutputFormat);
     _outputFormatSize = fetchInt2DParam(kParamFormatSize);
     _outputFormatPar = fetchDoubleParam(kParamFormatPar);
-
-    _premult = fetchChoiceParam(kParamInputPremult);
 
     /// Param does not necessarily exist for all IO plugins
     if (paramExists(kParamClipToRoD)) {
@@ -392,13 +387,10 @@ GenericWriterPlugin::fetchPlaneConvertAndCopy(const string& plane,
                                               const OfxRectI& renderWindow,
                                               const OfxPointD& renderScale,
                                               FieldEnum /*fieldToRender*/,
-                                              PreMultiplicationEnum pluginExpectedPremult,
-                                              PreMultiplicationEnum userPremult,
                                               const bool isOCIOIdentity,
                                               const bool doAnyPacking,
                                               const bool packingContiguous,
                                               const vector<int>& packingMapping,
-                                              const bool alphaOK,
                                               InputImagesHolder* srcImgsHolder, // must be deleted by caller
                                               OfxRectI* bounds,
                                               ImageMemory** tmpMem, // owned by srcImgsHolder
@@ -465,8 +457,6 @@ GenericWriterPlugin::fetchPlaneConvertAndCopy(const string& plane,
         return;
     }
 
-    // premultiplication/unpremultiplication is only useful for RGBA data
-    bool noPremult = (pixelComponents != ePixelComponentRGBA) || (userPremult == eImageOpaque);
     PixelComponentEnum srcMappedComponents;
     const int srcMappedComponentsCount = getPixelsComponentsCount(srcImg->getPixelComponentsProperty(), &srcMappedComponents);
 
@@ -476,9 +466,8 @@ GenericWriterPlugin::fetchPlaneConvertAndCopy(const string& plane,
 
     bool renderWindowIsBounds = renderWindow.x1 == bounds->x1 && renderWindow.y1 == bounds->y1 && renderWindow.x2 == bounds->x2 && renderWindow.y2 == bounds->y2;
 
-    if (renderWindowIsBounds && isOCIOIdentity && (noPremult || (userPremult == pluginExpectedPremult))) {
-        // Render window is of the same size as the input image and we don't need to apply colorspace conversion
-        // or premultiplication operations.
+    if (renderWindowIsBounds && isOCIOIdentity) {
+        // Render window is of the same size as the input image and we don't need to apply colorspace conversion.
 
         *tmpMemPtr = (float*)srcPixelData;
         *rowBytes = srcRowBytes;
@@ -551,99 +540,14 @@ GenericWriterPlugin::fetchPlaneConvertAndCopy(const string& plane,
             return;
         }
 
-        if (isOCIOIdentity) {
-            // bypass OCIO
-
-            if (noPremult || (userPremult == pluginExpectedPremult)) {
-                if ((userPremult == eImageOpaque) && ((srcMappedComponents == ePixelComponentRGBA) || (srcMappedComponents == ePixelComponentAlpha))) {
-                    // Opaque: force the alpha channel to 1
-                    copyPixelsOpaque(*this, renderWindowClipped, renderScale,
-                                     srcPixelData, *bounds, srcMappedComponents, srcMappedComponentsCount, bitDepth, srcRowBytes,
-                                     tmpPixelData, renderWindow, srcMappedComponents, srcMappedComponentsCount, bitDepth, tmpRowBytes);
-                } else {
-                    // copy the whole raw src image
-                    copyPixels(*this, renderWindowClipped, renderScale,
-                               srcPixelData, *bounds, srcMappedComponents, srcMappedComponentsCount, bitDepth, srcRowBytes,
-                               tmpPixelData, renderWindow, srcMappedComponents, srcMappedComponentsCount, bitDepth, tmpRowBytes);
-                }
-            } else if (userPremult == eImagePreMultiplied) {
-                assert(pluginExpectedPremult == eImageUnPreMultiplied);
-                if (pluginExpectedPremult == eImageUnPreMultiplied) {
-                    unPremultPixelData(renderWindowClipped, renderScale, srcPixelData, *bounds, srcMappedComponents, srcMappedComponentsCount, bitDepth, srcRowBytes, tmpPixelData, renderWindow, srcMappedComponents, srcMappedComponentsCount, bitDepth, tmpRowBytes);
-                } else {
-                    copyPixels(*this, renderWindowClipped, renderScale,
-                               srcPixelData, *bounds, srcMappedComponents, srcMappedComponentsCount, bitDepth, srcRowBytes,
-                               tmpPixelData, renderWindow, srcMappedComponents, srcMappedComponentsCount, bitDepth, tmpRowBytes);
-                }
-            } else {
-                assert(userPremult == eImageUnPreMultiplied);
-                assert(pluginExpectedPremult == eImagePreMultiplied);
-                premultPixelData(renderWindowClipped, renderScale, srcPixelData, *bounds, srcMappedComponents, srcMappedComponentsCount, bitDepth, srcRowBytes, tmpPixelData, renderWindow, srcMappedComponents, srcMappedComponentsCount, bitDepth, tmpRowBytes);
-            }
-        } else {
-            assert(!isOCIOIdentity);
-            //
-            // We should NEVER premult in a nonlinear colorspace if the output format doesn't support
-            // alpha. https://github.com/NatronGitHub/Natron/issues/582
-            // If the output format doesn't support Alpha, we just do the OCIO colorspace conversion on
-            // premultiplied values.
-            // It corresponds to merging over solid black.
-            // Note that linear OCIO colorspaces do not need the unpremult/premult operations at all,
-            // and could go in the if (isOCIOIdentity) branch above, if we were able to figure out that
-            // they are linear.
-            //
-            // The decision to unpremult/premult before/after OCIO conversion is done this way:
-            // alphaOK | userPremult | pluginExpectedPremult | doUnpremultBeforeOCIO | doPremultAfterOCIO
-            //   true  |      U      |            U          |           no          |         no
-            //   true  |      U      |            P          |           no          |        yes
-            //   true  |      P      |            U          |          yes          |         no
-            //   true  |      P      |            P          |          yes          |        yes
-            //  false  |      U      |            U          |           no          |         no
-            //  false  |      U      |            P          |           no          |         NO
-            //  false  |      P      |            U          |          yes          |         no
-            //  false  |      P      |            P          |           NO          |         NO (2)
-            // Note the last line: it says that when saving to a format that doesn't handle alpha (eg jpg),
-            // users prefer just considering the image as opaque and dropping alpha before color conversion.
-
-            // OCIO expects unpremultiplied input
-            if (noPremult || (userPremult == eImageUnPreMultiplied)) {
-                if ((userPremult == eImageOpaque) && ((srcMappedComponents == ePixelComponentRGBA) || (srcMappedComponents == ePixelComponentAlpha))) {
-                    // Opaque: force the alpha channel to 1
-                    copyPixelsOpaque(*this, renderWindowClipped, renderScale,
-                                     srcPixelData, *bounds, srcMappedComponents, srcMappedComponentsCount, bitDepth, srcRowBytes,
-                                     tmpPixelData, renderWindow, srcMappedComponents, srcMappedComponentsCount, bitDepth, tmpRowBytes);
-                } else {
-                    // copy the whole raw src image
-                    copyPixels(*this, renderWindowClipped, renderScale,
-                               srcPixelData, *bounds, srcMappedComponents, srcMappedComponentsCount, bitDepth, srcRowBytes,
-                               tmpPixelData, renderWindow, srcMappedComponents, srcMappedComponentsCount, bitDepth, tmpRowBytes);
-                }
-            } else {
-                assert(userPremult == eImagePreMultiplied);
-                // see https://github.com/NatronGitHub/Natron/issues/582#issuecomment-792465844
-                if (alphaOK || pluginExpectedPremult == eImageUnPreMultiplied) {
-                    // unpremult before colorspace conversion, only if the plugin expects unpremult data (eg WritePNG)
-                    unPremultPixelData(renderWindowClipped, renderScale, srcPixelData, *bounds, srcMappedComponents, srcMappedComponentsCount, bitDepth, srcRowBytes, tmpPixelData, renderWindow, srcMappedComponents, srcMappedComponentsCount, bitDepth, tmpRowBytes);
-                } else {
-                    copyPixels(*this, renderWindowClipped, renderScale,
-                               srcPixelData, *bounds, srcMappedComponents, srcMappedComponentsCount, bitDepth, srcRowBytes,
-                               tmpPixelData, renderWindow, srcMappedComponents, srcMappedComponentsCount, bitDepth, tmpRowBytes);
-                }
-            }
+        copyPixels(*this, renderWindowClipped, renderScale,
+                   srcPixelData, *bounds, srcMappedComponents, srcMappedComponentsCount, bitDepth, srcRowBytes,
+                   tmpPixelData, renderWindow, srcMappedComponents, srcMappedComponentsCount, bitDepth, tmpRowBytes);
 #ifdef OFX_IO_USING_OCIO
-            // do the color-space conversion
-            if ((srcMappedComponents == ePixelComponentRGB) || (srcMappedComponents == ePixelComponentRGBA)) {
-                _ocio->apply(time, renderWindowClipped, renderScale, tmpPixelData, renderWindow, srcMappedComponents, srcMappedComponentsCount, tmpRowBytes);
-            }
+        if (!isOCIOIdentity && ((srcMappedComponents == ePixelComponentRGB) || (srcMappedComponents == ePixelComponentRGBA))) {
+            _ocio->apply(time, renderWindowClipped, renderScale, tmpPixelData, renderWindow, srcMappedComponents, srcMappedComponentsCount, tmpRowBytes);
+        }
 #endif
-
-            // If needed, re-premult the image for the plugin to work correctly
-            // ... but only if output format supports alpha (alphaOK)
-            // see https://github.com/NatronGitHub/Natron/issues/582#issuecomment-792465844
-            if (alphaOK && (pluginExpectedPremult == eImagePreMultiplied) && (srcMappedComponents == ePixelComponentRGBA)) {
-                premultPixelData(renderWindowClipped, renderScale, tmpPixelData, renderWindow, srcMappedComponents, srcMappedComponentsCount, bitDepth, tmpRowBytes, tmpPixelData, renderWindow, srcMappedComponents, srcMappedComponentsCount, bitDepth, tmpRowBytes);
-            }
-        } // if (isOCIOIdentity) {
 
         // copy to dstImg if necessary
         if ((renderRequestedView == view) && _outputClip && _outputClip->isConnected()) {
@@ -702,7 +606,7 @@ GenericWriterPlugin::fetchPlaneConvertAndCopy(const string& plane,
             }
         }
         *bounds = renderWindow;
-    } // if (renderWindowIsBounds && isOCIOIdentity && (noPremult || userPremult == pluginExpectedPremult))
+    } // if (renderWindowIsBounds && isOCIOIdentity)
 
     if (doAnyPacking && (!packingContiguous || ((int)packingMapping.size() != srcMappedComponentsCount))) {
         int pixelBytes = packingMapping.size() * getComponentBytes(bitDepth);
@@ -835,14 +739,6 @@ GenericWriterPlugin::render(const RenderArguments& args)
 
     double pixelAspectRatio;
     getOutputRoD(time, args.renderView, 0, &pixelAspectRatio);
-
-    /// This is automatically the same generally as inputClip premultiplication but can differ is the user changed it.
-    int userPremult_i;
-    _premult->getValueAtTime(time, userPremult_i);
-    PreMultiplicationEnum userPremult = (PreMultiplicationEnum)userPremult_i;
-
-    /// This is what the plug-in expects to be passed to the encode function.
-    PreMultiplicationEnum pluginExpectedPremult = getExpectedInputPremultiplication();
 
     /// This is the mapping of destination channels onto source channels if packing happens
     vector<int> packingMapping;
@@ -991,7 +887,6 @@ GenericWriterPlugin::render(const RenderArguments& args)
     // This controls how we split into parts
     LayerViewsPartsEnum partsSplit = getPartsSplittingPreference();
 
-    bool alphaOK = supportsAlpha(filename);
     if ((viewNames.size() == 1) && (args.planes.size() == 1)) {
         // Regular case, just do a simple part
         int viewIndex = viewNames.begin()->first;
@@ -1000,7 +895,7 @@ GenericWriterPlugin::render(const RenderArguments& args)
         ImageMemory* tmpMem; // owned by dataHolder, no need to delete
         ImageData data;
         // NOTE: failIfNoSrcImg=true causes the writer to fail if the src RoD is empty, see https://github.com/MrKepzie/Natron/issues/1617
-        fetchPlaneConvertAndCopy(args.planes.front(), /*failIfNoSrcImg=*/false, viewIndex, args.renderView, time, args.renderWindow, args.renderScale, args.fieldToRender, pluginExpectedPremult, userPremult, isOCIOIdentity, doAnyPacking, packingContiguous, packingMapping, alphaOK, &dataHolder, &data.bounds, &tmpMem, &srcImg, &data.srcPixelData, &data.rowBytes, &data.pixelComponents, &data.pixelComponentsCount);
+        fetchPlaneConvertAndCopy(args.planes.front(), /*failIfNoSrcImg=*/false, viewIndex, args.renderView, time, args.renderWindow, args.renderScale, args.fieldToRender, isOCIOIdentity, doAnyPacking, packingContiguous, packingMapping, &dataHolder, &data.bounds, &tmpMem, &srcImg, &data.srcPixelData, &data.rowBytes, &data.pixelComponents, &data.pixelComponentsCount);
 
         int dstNComps = doAnyPacking ? packingMapping.size() : data.pixelComponentsCount;
         int dstNCompsStartIndex = doAnyPacking ? packingMapping[0] : 0;
@@ -1046,7 +941,7 @@ GenericWriterPlugin::render(const RenderArguments& args)
                     ImageMemory* tmpMem; // owned by dataHolder, no need to delete
                     const Image* srcImg; // owned by dataHolder, no need to delete
                     ImageData data;
-                    fetchPlaneConvertAndCopy(*plane, /*failIfNoSrcImg=*/false, view->first, args.renderView, time, args.renderWindow, args.renderScale, args.fieldToRender, pluginExpectedPremult, userPremult, isOCIOIdentity, doAnyPacking, packingContiguous, packingMapping, alphaOK, &dataHolder, &data.bounds, &tmpMem, &srcImg, &data.srcPixelData, &data.rowBytes, &data.pixelComponents, &data.pixelComponentsCount);
+                    fetchPlaneConvertAndCopy(*plane, /*failIfNoSrcImg=*/false, view->first, args.renderView, time, args.renderWindow, args.renderScale, args.fieldToRender, isOCIOIdentity, doAnyPacking, packingContiguous, packingMapping, &dataHolder, &data.bounds, &tmpMem, &srcImg, &data.srcPixelData, &data.rowBytes, &data.pixelComponents, &data.pixelComponentsCount);
                     if (!data.srcPixelData) {
                         continue;
                     }
@@ -1141,7 +1036,7 @@ GenericWriterPlugin::render(const RenderArguments& args)
                     ImageMemory* tmpMem; // owned by dataHolder, no need to delete
                     const Image* srcImg; // owned by dataHolder, no need to delete
                     ImageData data;
-                    fetchPlaneConvertAndCopy(*plane, /*failIfNoSrcImg=*/false, view->first, args.renderView, time, args.renderWindow, args.renderScale, args.fieldToRender, pluginExpectedPremult, userPremult, isOCIOIdentity, doAnyPacking, packingContiguous, packingMapping, alphaOK, &dataHolder, &data.bounds, &tmpMem, &srcImg, &data.srcPixelData, &data.rowBytes, &data.pixelComponents, &data.pixelComponentsCount);
+                    fetchPlaneConvertAndCopy(*plane, /*failIfNoSrcImg=*/false, view->first, args.renderView, time, args.renderWindow, args.renderScale, args.fieldToRender, isOCIOIdentity, doAnyPacking, packingContiguous, packingMapping, &dataHolder, &data.bounds, &tmpMem, &srcImg, &data.srcPixelData, &data.rowBytes, &data.pixelComponents, &data.pixelComponentsCount);
                     if (!data.srcPixelData) {
                         continue;
                     }
@@ -1241,7 +1136,7 @@ GenericWriterPlugin::render(const RenderArguments& args)
                     ImageMemory* tmpMem; // owned by dataHolder, no need to delete
                     const Image* srcImg; // owned by dataHolder, no need to delete
                     ImageData data;
-                    fetchPlaneConvertAndCopy(*plane, /*failIfNoSrcImg=*/false, view->first, args.renderView, time, args.renderWindow, args.renderScale, args.fieldToRender, pluginExpectedPremult, userPremult, isOCIOIdentity, doAnyPacking, packingContiguous, packingMapping, alphaOK, &dataHolder, &data.bounds, &tmpMem, &srcImg, &data.srcPixelData, &data.rowBytes, &data.pixelComponents, &data.pixelComponentsCount);
+                    fetchPlaneConvertAndCopy(*plane, /*failIfNoSrcImg=*/false, view->first, args.renderView, time, args.renderWindow, args.renderScale, args.fieldToRender, isOCIOIdentity, doAnyPacking, packingContiguous, packingMapping, &dataHolder, &data.bounds, &tmpMem, &srcImg, &data.srcPixelData, &data.rowBytes, &data.pixelComponents, &data.pixelComponentsCount);
                     if (!data.srcPixelData) {
                         continue;
                     }
@@ -1633,116 +1528,6 @@ GenericWriterPlugin::endSequenceRender(const EndSequenceRenderArguments& args)
 
 ////////////////////////////////////////////////////////////////////////////////
 /** @brief render for the filter */
-
-////////////////////////////////////////////////////////////////////////////////
-// basic plugin render function, just a skelington to instantiate templates from
-
-static void
-setupAndProcess(PixelProcessorFilterBase& processor,
-                int premultChannel,
-                const OfxRectI& renderWindow,
-                const OfxPointD& renderScale,
-                const void* srcPixelData,
-                const OfxRectI& srcBounds,
-                PixelComponentEnum srcPixelComponents,
-                int srcPixelComponentCount,
-                BitDepthEnum srcPixelDepth,
-                int srcRowBytes,
-                void* dstPixelData,
-                const OfxRectI& dstBounds,
-                PixelComponentEnum dstPixelComponents,
-                int dstPixelComponentCount,
-                BitDepthEnum dstPixelDepth,
-                int dstRowBytes)
-{
-    assert(srcPixelData && dstPixelData);
-
-    // make sure bit depths are sane
-    if ((srcPixelDepth != dstPixelDepth) || (srcPixelComponents != dstPixelComponents)) {
-        throwSuiteStatusException(kOfxStatErrFormat);
-
-        return;
-    }
-
-    // set the images
-    processor.setDstImg(dstPixelData, dstBounds, dstPixelComponents, dstPixelComponentCount, dstPixelDepth, dstRowBytes);
-    processor.setSrcImg(srcPixelData, srcBounds, srcPixelComponents, srcPixelComponentCount, srcPixelDepth, srcRowBytes, 0);
-
-    // set the render window
-    processor.setRenderWindow(renderWindow, renderScale);
-
-    processor.setPremultMaskMix(true, premultChannel, 1.);
-
-    // Call the base class process member, this will call the derived templated process code
-    processor.process();
-}
-
-void
-GenericWriterPlugin::unPremultPixelData(const OfxRectI& renderWindow,
-                                        const OfxPointD& renderScale,
-                                        const void* srcPixelData,
-                                        const OfxRectI& srcBounds,
-                                        PixelComponentEnum srcPixelComponents,
-                                        int srcPixelComponentCount,
-                                        BitDepthEnum srcPixelDepth,
-                                        int srcRowBytes,
-                                        void* dstPixelData,
-                                        const OfxRectI& dstBounds,
-                                        PixelComponentEnum dstPixelComponents,
-                                        int dstPixelComponentCount,
-                                        BitDepthEnum dstBitDepth,
-                                        int dstRowBytes)
-{
-    assert(srcPixelData && dstPixelData);
-
-    // do the rendering
-    if ((dstBitDepth != eBitDepthFloat) || ((dstPixelComponents != ePixelComponentRGBA) && (dstPixelComponents != ePixelComponentRGB) && (dstPixelComponents != ePixelComponentAlpha))) {
-        throwSuiteStatusException(kOfxStatErrFormat);
-
-        return;
-    }
-    if (dstPixelComponents == ePixelComponentRGBA) {
-        PixelCopierUnPremult<float, 4, 1, float, 4, 1> fred(*this);
-        setupAndProcess(fred, 3, renderWindow, renderScale, srcPixelData, srcBounds, srcPixelComponents, srcPixelComponentCount, srcPixelDepth, srcRowBytes, dstPixelData, dstBounds, dstPixelComponents, dstPixelComponentCount, dstBitDepth, dstRowBytes);
-    } else {
-        /// other pixel components means you want to copy only...
-        assert(false);
-    }
-}
-
-void
-GenericWriterPlugin::premultPixelData(const OfxRectI& renderWindow,
-                                      const OfxPointD& renderScale,
-                                      const void* srcPixelData,
-                                      const OfxRectI& srcBounds,
-                                      PixelComponentEnum srcPixelComponents,
-                                      int srcPixelComponentCount,
-                                      BitDepthEnum srcPixelDepth,
-                                      int srcRowBytes,
-                                      void* dstPixelData,
-                                      const OfxRectI& dstBounds,
-                                      PixelComponentEnum dstPixelComponents,
-                                      int dstPixelComponentCount,
-                                      BitDepthEnum dstBitDepth,
-                                      int dstRowBytes)
-{
-    assert(srcPixelData && dstPixelData);
-
-    // do the rendering
-    if ((dstBitDepth != eBitDepthFloat) || ((dstPixelComponents != ePixelComponentRGBA) && (dstPixelComponents != ePixelComponentRGB) && (dstPixelComponents != ePixelComponentAlpha))) {
-        throwSuiteStatusException(kOfxStatErrFormat);
-
-        return;
-    }
-
-    if (dstPixelComponents == ePixelComponentRGBA) {
-        PixelCopierPremult<float, 4, 1, float, 4, 1> fred(*this);
-        setupAndProcess(fred, 3, renderWindow, renderScale, srcPixelData, srcBounds, srcPixelComponents, srcPixelComponentCount, srcPixelDepth, srcRowBytes, dstPixelData, dstBounds, dstPixelComponents, dstPixelComponentCount, dstBitDepth, dstRowBytes);
-    } else {
-        /// other pixel components means you want to copy only...
-        assert(false);
-    }
-}
 
 void
 GenericWriterPlugin::getSelectedOutputFormat(OfxRectI* format,
@@ -2174,8 +1959,6 @@ GenericWriterPlugin::changedParam(const InstanceChangedArgs& args,
             msg += "N/A";
         } else {
             msg += imageFormatString(_inputClip->getPixelComponents(), _inputClip->getPixelDepth());
-            msg += " ";
-            msg += premultString(_inputClip->getPreMultiplication());
         }
         msg += "\n";
         msg += "Output: ";
@@ -2183,8 +1966,6 @@ GenericWriterPlugin::changedParam(const InstanceChangedArgs& args,
             msg += "N/A";
         } else {
             msg += imageFormatString(_outputClip->getPixelComponents(), _outputClip->getPixelDepth());
-            msg += " ";
-            msg += premultString(_outputClip->getPreMultiplication());
         }
         msg += "\n";
         sendMessage(Message::eMessageMessage, "", msg);
@@ -2210,12 +1991,9 @@ GenericWriterPlugin::changedClip(const InstanceChangedArgs& args,
     clearPersistentMessage();
     MultiPlaneEffect::changedClip(args, clipName);
     if ((clipName == kOfxImageEffectSimpleSourceClipName) && _inputClip && (args.reason == eChangeUserEdit)) {
-        PreMultiplicationEnum premult = _inputClip->getPreMultiplication();
 #ifdef DEBUG
         if (_inputClip->isConnected()) {
             PixelComponentEnum components = _inputClip->getPixelComponents();
-            assert((components == ePixelComponentAlpha && premult != eImageOpaque) || (components == ePixelComponentRGB && premult == eImageOpaque) || (components == ePixelComponentRGBA) || ((components == ePixelComponentCustom || components == ePixelComponentMotionVectors || components == ePixelComponentStereoDisparity) && gHostIsMultiPlanar));
-
             int index = -1;
             for (std::size_t i = 0; i < _outputComponentsTable.size(); ++i) {
                 if (_outputComponentsTable[i] == components) {
@@ -2229,8 +2007,6 @@ GenericWriterPlugin::changedClip(const InstanceChangedArgs& args,
             }
         }
 #endif
-        _premult->setValue(premult);
-
         double fps = _inputClip->getFrameRate();
         setOutputFrameRate(fps);
     } else if (clipName == kOfxImageEffectOutputClipName) {
@@ -2715,7 +2491,7 @@ GenericWriterDescribeInContextBegin(ImageEffectDescriptor& desc,
         param->appendOption(premultString(eImagePreMultiplied), kParamInputPremultOptionPreMultipliedHint);
         assert(param->getNOptions() == eImageUnPreMultiplied);
         param->appendOption(premultString(eImageUnPreMultiplied), kParamInputPremultOptionUnPreMultipliedHint);
-        param->setDefault(eImagePreMultiplied); // images should be premultiplied in a compositing context
+        param->setDefault(eImagePreMultiplied);
         param->setLayoutHint(eLayoutHintNoNewLine, 1);
         if (page) {
             page->addChild(*param);

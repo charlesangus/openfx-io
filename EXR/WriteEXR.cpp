@@ -148,7 +148,6 @@ private:
                         const int dstNComps,
                         const int rowBytes) OVERRIDE FINAL;
     virtual bool isImageFile(const string& fileExtension) const OVERRIDE FINAL;
-    virtual PreMultiplicationEnum getExpectedInputPremultiplication() const OVERRIDE FINAL { return eImagePreMultiplied; }
 
     virtual void onOutputFileChanged(const string& newFile, bool setColorSpace) OVERRIDE FINAL;
 

@@ -131,9 +131,8 @@ typedef ImageInput* ImageInputPtr;
 #define kPluginGrouping "Image/Readers"
 #define kPluginDescription                                                              \
     "Read images using OpenImageIO.\n\n"                                                \
-    "Output is always Premultiplied (alpha is associated).\n\n"                         \
-    "The \"Image Premult\" parameter controls the file premultiplication state, "       \
-    "and can be used to fix wrong file metadata (see the help for that parameter).\n\n" \
+    "Pixel values are output exactly as stored in the file: alpha is never "            \
+    "associated or unassociated on read.\n\n"                                           \
     "When reading an OpenEXR file with a dataWindow, it is converted to an OpenFX "     \
     "region of definition by flipping the y axis (y axis goes down in OpenEXR, "        \
     "up in OpenFX), and adding 1 pixel in every direction if the \"Edge Pixels\" "      \
@@ -421,7 +420,7 @@ private:
      *
      * This function is only called once: when the filename is first set.
      *
-     * Besides returning colorspace, premult, components, and componentcount, if it returns true
+     * Besides returning colorspace, components, and componentcount, if it returns true
      * this function may also set extra format-specific parameters using Param::setValue.
      * The parameters must not be animated, since their value must remain the same for a whole sequence.
      *
@@ -430,10 +429,10 @@ private:
      *
      * The colorspace may be set if available, else a default colorspace is used.
      *
-     * You must also return the premultiplication state and pixel components of the image.
+     * You must also return the pixel components of the image.
      * When reading an image sequence, this is called only for the first image when the user actually selects the new sequence.
      **/
-    virtual bool guessParamsFromFilename(const string& filename, string* colorspace, PreMultiplicationEnum* filePremult, PixelComponentEnum* components, int* componentCount) OVERRIDE FINAL;
+    virtual bool guessParamsFromFilename(const string& filename, string* colorspace, PixelComponentEnum* components, int* componentCount) OVERRIDE FINAL;
     virtual bool isVideoStream(const string& /*filename*/) OVERRIDE FINAL { return false; }
 
     virtual void decode(const string& filename,
@@ -1747,7 +1746,7 @@ ReadOIIOPlugin::guessColorspace(const string& filename,
  *
  * This function is only called once: when the filename is first set.
  *
- * Besides returning colorspace, premult, components, and componentcount, if it returns true
+ * Besides returning colorspace, components, and componentcount, if it returns true
  * this function may also set extra format-specific parameters using Param::setValue.
  * The parameters must not be animated, since their value must remain the same for a whole sequence.
  *
@@ -1756,14 +1755,13 @@ ReadOIIOPlugin::guessColorspace(const string& filename,
  *
  * The colorspace may be set if available, else a default colorspace is used.
  *
- * You must also return the premultiplication state and pixel components of the image.
+ * You must also return the pixel components of the image.
  * When reading an image sequence, this is called only for the first image when the user actually selects the new sequence.
  **/
 bool
 ReadOIIOPlugin::guessParamsFromFilename(const string& filename,
                                         string* colorspace,
-                                        PreMultiplicationEnum* filePremult,
-                                        PixelComponentEnum* components,
+                                         PixelComponentEnum* components,
                                         int* componentCount)
 {
     string error;
@@ -1832,17 +1830,6 @@ ReadOIIOPlugin::guessParamsFromFilename(const string& filename,
             break;
         }
         //*componentCount = subimages[0].nchannels;
-    }
-
-    if ((*components != ePixelComponentRGBA) && (*components != ePixelComponentAlpha)) {
-        *filePremult = eImageOpaque;
-    } else {
-        bool unassociatedAlpha = subimages[0].get_int_attribute("oiio:UnassociatedAlpha", 0);
-        if (unassociatedAlpha) {
-            *filePremult = eImageUnPreMultiplied;
-        } else {
-            *filePremult = eImagePreMultiplied;
-        }
     }
 
     return true;

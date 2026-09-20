@@ -135,7 +135,7 @@ private:
      *
      * This function is only called once: when the filename is first set.
      *
-     * Besides returning colorspace, premult, components, and componentcount, if it returns true
+     * Besides returning colorspace, components, and componentcount, if it returns true
      * this function may also set extra format-specific parameters using Param::setValue.
      * The parameters must not be animated, since their value must remain the same for a whole sequence.
      *
@@ -144,10 +144,10 @@ private:
      *
      * The colorspace may be set if available, else a default colorspace is used.
      *
-     * You must also return the premultiplication state and pixel components of the image.
+     * You must also return the pixel components of the image.
      * When reading an image sequence, this is called only for the first image when the user actually selects the new sequence.
      **/
-    virtual bool guessParamsFromFilename(const string& filename, string* colorspace, PreMultiplicationEnum* filePremult, PixelComponentEnum* components, int* componentCount) OVERRIDE FINAL;
+    virtual bool guessParamsFromFilename(const string& filename, string* colorspace, PixelComponentEnum* components, int* componentCount) OVERRIDE FINAL;
     virtual void decode(const string& filename, OfxTime time, int view, bool isPlayback, const OfxRectI& renderWindow, const OfxPointD& renderScale, float* pixelData, const OfxRectI& bounds, PixelComponentEnum pixelComponents, int pixelComponentCount, int rowBytes) OVERRIDE FINAL;
     virtual bool getSequenceTimeDomain(const string& filename, OfxRangeI& range) OVERRIDE FINAL;
     virtual bool getFrameBounds(const string& filename, OfxTime time, int view, OfxRectI* bounds, OfxRectI* format, double* par, string* error, int* tile_width, int* tile_height) OVERRIDE FINAL;
@@ -245,7 +245,7 @@ ReadFFmpegPlugin::changedParam(const InstanceChangedArgs& args,
  *
  * This function is only called once: when the filename is first set.
  *
- * Besides returning colorspace, premult, components, and componentcount, if it returns true
+ * Besides returning colorspace, components, and componentcount, if it returns true
  * this function may also set extra format-specific parameters using Param::setValue.
  * The parameters must not be animated, since their value must remain the same for a whole sequence.
  *
@@ -254,17 +254,16 @@ ReadFFmpegPlugin::changedParam(const InstanceChangedArgs& args,
  *
  * The colorspace may be set if available, else a default colorspace is used.
  *
- * You must also return the premultiplication state and pixel components of the image.
+ * You must also return the pixel components of the image.
  * When reading an image sequence, this is called only for the first image when the user actually selects the new sequence.
  **/
 bool
 ReadFFmpegPlugin::guessParamsFromFilename(const string& filename,
                                           string* colorspace,
-                                          PreMultiplicationEnum* filePremult,
-                                          PixelComponentEnum* components,
+                                             PixelComponentEnum* components,
                                           int* componentCount)
 {
-    assert(colorspace && filePremult && components && componentCount);
+    assert(colorspace && components && componentCount);
     auto file = _manager.get(this, filename);
     if (!file) {
         // Clear all opened files by this plug-in since the user changed the selected file/sequence
@@ -310,8 +309,6 @@ ReadFFmpegPlugin::guessParamsFromFilename(const string& filename,
 
     *componentCount = file->getNumberOfComponents();
     *components = (*componentCount > 3) ? ePixelComponentRGBA : ePixelComponentRGB;
-    /// Ffmpeg is RGB opaque.
-    *filePremult = (*componentCount > 3) ? eImageUnPreMultiplied : eImageOpaque;
 
     return true;
 } // ReadFFmpegPlugin::guessParamsFromFilename

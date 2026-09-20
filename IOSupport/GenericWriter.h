@@ -114,14 +114,13 @@ namespace IO {
         virtual void changedParam(const OFX::InstanceChangedArgs& args, const std::string& paramName) OVERRIDE;
 
         /**
-         * @brief Overridden to handle premultiplication parameter given the input clip.
+         * @brief Overridden to propagate the input clip's frame rate.
          * Make sure you call the base class implementation if you override it.
          **/
         virtual void changedClip(const OFX::InstanceChangedArgs& args, const std::string& clipName) OVERRIDE;
 
         /**
-         * @brief Overridden to set the clips premultiplication according to the user and plug-ins wishes.
-         * It also set the output components from the output components parameter
+         * @brief Overridden to set the output components from the output components parameter.
          **/
         virtual void getClipPreferences(OFX::ClipPreferencesSetter& clipPreferences) OVERRIDE;
 
@@ -234,12 +233,6 @@ namespace IO {
         virtual void setOutputFrameRate(double /*fps*/) { }
 
         /**
-         * @brief Must return whether your plug-in expects an input stream to be premultiplied or unpremultiplied to encode
-         * properly into the file.
-         **/
-        virtual OFX::PreMultiplicationEnum getExpectedInputPremultiplication() const = 0;
-
-        /**
          * @brief To implement if you added supportsDisplayWindow = true to GenericWriterDescribe().
          * Basically only EXR file format can handle this.
          **/
@@ -256,7 +249,6 @@ namespace IO {
         OFX::ChoiceParam* _outputFormat; //< the output format to render
         OFX::Int2DParam* _outputFormatSize;
         OFX::DoubleParam* _outputFormatPar;
-        OFX::ChoiceParam* _premult;
         OFX::BooleanParam* _clipToRoD;
 
         OFX::StringParam* _sublabel;
@@ -314,13 +306,10 @@ namespace IO {
                                       const OfxRectI& renderWindow,
                                       const OfxPointD& renderScale,
                                       OFX::FieldEnum fieldToRender,
-                                      OFX::PreMultiplicationEnum pluginExpectedPremult,
-                                      OFX::PreMultiplicationEnum userPremult,
                                       const bool isOCIOIdentity,
                                       const bool doAnyPacking,
                                       const bool packingContiguous,
                                       const std::vector<int>& packingMapping,
-                                      const bool alphaOK,
                                       InputImagesHolder* srcImgsHolder,
                                       OfxRectI* bounds,
                                       OFX::ImageMemory** tmpMem,
@@ -461,36 +450,6 @@ namespace IO {
                                     const int dstPixelComponentCount,
                                     const int dstRowBytes,
                                     void* dstPixelData);
-
-        void unPremultPixelData(const OfxRectI& renderWindow,
-                                const OfxPointD& renderScale,
-                                const void* srcPixelData,
-                                const OfxRectI& srcBounds,
-                                OFX::PixelComponentEnum srcPixelComponents,
-                                int srcPixelComponentCount,
-                                OFX::BitDepthEnum srcPixelDepth,
-                                int srcRowBytes,
-                                void* dstPixelData,
-                                const OfxRectI& dstBounds,
-                                OFX::PixelComponentEnum dstPixelComponents,
-                                int dstPixelComponentCount,
-                                OFX::BitDepthEnum dstBitDepth,
-                                int dstRowBytes);
-
-        void premultPixelData(const OfxRectI& renderWindow,
-                              const OfxPointD& renderScale,
-                              const void* srcPixelData,
-                              const OfxRectI& srcBounds,
-                              OFX::PixelComponentEnum srcPixelComponents,
-                              int srcPixelComponentCount,
-                              OFX::BitDepthEnum srcPixelDepth,
-                              int srcRowBytes,
-                              void* dstPixelData,
-                              const OfxRectI& dstBounds,
-                              OFX::PixelComponentEnum dstPixelComponents,
-                              int dstPixelComponentCount,
-                              OFX::BitDepthEnum dstBitDepth,
-                              int dstRowBytes);
 
         void getPackingOptions(bool* allCheckboxHidden, std::vector<int>* packingMapping) const;
 

@@ -1048,7 +1048,6 @@ private:
                         const int rowBytes) OVERRIDE FINAL;
     virtual bool isImageFile(const string& fileExtension) const OVERRIDE FINAL;
     virtual void setOutputFrameRate(double fps) OVERRIDE FINAL;
-    virtual PreMultiplicationEnum getExpectedInputPremultiplication() const OVERRIDE FINAL { return eImageUnPreMultiplied; }
 
 private:
     void updateVisibility();

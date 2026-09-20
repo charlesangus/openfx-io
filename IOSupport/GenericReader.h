@@ -105,7 +105,7 @@ public:
     virtual bool isIdentity(const OFX::IsIdentityArguments& args, OFX::Clip*& identityClip, double& identityTime, int& view, std::string& plane) OVERRIDE;
 
     /**
-     * @brief Set the output components and premultiplication state for the input image automatically.
+     * @brief Set the output components for the input image automatically.
      * This is filled from directly the info returned by guessParamsFromFilename
      **/
     virtual void getClipPreferences(OFX::ClipPreferencesSetter& clipPreferences) OVERRIDE;
@@ -187,7 +187,7 @@ private:
      *
      * This function is only called once: when the filename is first set.
      *
-     * Besides returning colorspace, premult, components, and componentcount, if it returns true
+     * Besides returning colorspace, components, and componentcount, if it returns true
      * this function may also set extra format-specific parameters using OFX::Param::setValue.
      * The parameters must not be animated, since their value must remain the same for a whole sequence.
      *
@@ -196,12 +196,11 @@ private:
      *
      * The colorspace may be set if available, else a default colorspace is used.
      *
-     * You must also return the premultiplication state and pixel components of the image.
+     * You must also return the pixel components of the image.
      * When reading an image sequence, this is called only for the first image when the user actually selects the new sequence.
      **/
     virtual bool guessParamsFromFilename(const std::string& newFile,
                                          std::string* colorspace,
-                                         OFX::PreMultiplicationEnum* filePremult,
                                          OFX::PixelComponentEnum* components,
                                          int* componentCount)
         = 0;
@@ -344,36 +343,6 @@ private:
                        OFX::BitDepthEnum dstBitDepth,
                        int dstRowBytes);
 
-    void premultPixelData(const OfxRectI& renderWindow,
-                          const OfxPointD& renderScale,
-                          const void* srcPixelData,
-                          const OfxRectI& srcBounds,
-                          OFX::PixelComponentEnum srcPixelComponents,
-                          int srcPixelComponentCount,
-                          OFX::BitDepthEnum srcPixelDepth,
-                          int srcRowBytes,
-                          void* dstPixelData,
-                          const OfxRectI& dstBounds,
-                          OFX::PixelComponentEnum dstPixelComponents,
-                          int dstPixelComponentCount,
-                          OFX::BitDepthEnum dstBitDepth,
-                          int dstRowBytes);
-
-    void unPremultPixelData(const OfxRectI& renderWindow,
-                            const OfxPointD& renderScale,
-                            const void* srcPixelData,
-                            const OfxRectI& srcBounds,
-                            OFX::PixelComponentEnum srcPixelComponents,
-                            int srcPixelComponentCount,
-                            OFX::BitDepthEnum srcPixelDepth,
-                            int srcRowBytes,
-                            void* dstPixelData,
-                            const OfxRectI& dstBounds,
-                            OFX::PixelComponentEnum dstPixelComponents,
-                            int dstPixelComponentCount,
-                            OFX::BitDepthEnum dstBitDepth,
-                            int dstRowBytes);
-
     OfxPointD detectProxyScale(const std::string& originalFileName, const std::string& proxyFileName, OfxTime time);
 
     void setSequenceFromFile(const std::string& filename);
@@ -414,7 +383,6 @@ private:
     OFX::ChoiceParam* _frameMode; //< do we use a time offset or an absolute starting frame
 
     OFX::ChoiceParam* _outputComponents;
-    OFX::ChoiceParam* _filePremult;
     OFX::ChoiceParam* _outputPremult;
 
     OFX::BooleanParam* _timeDomainUserSet; //< true when the time domain has bee nuser edited
