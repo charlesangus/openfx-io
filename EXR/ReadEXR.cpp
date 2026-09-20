@@ -112,7 +112,7 @@ private:
      *
      * This function is only called once: when the filename is first set.
      *
-     * Besides returning colorspace, premult, components, and componentcount, if it returns true
+     * Besides returning colorspace, components, and componentcount, if it returns true
      * this function may also set extra format-specific parameters using Param::setValue.
      * The parameters must not be animated, since their value must remain the same for a whole sequence.
      *
@@ -121,10 +121,10 @@ private:
      *
      * The colorspace may be set if available, else a default colorspace is used.
      *
-     * You must also return the premultiplication state and pixel components of the image.
+     * You must also return the pixel components of the image.
      * When reading an image sequence, this is called only for the first image when the user actually selects the new sequence.
      **/
-    virtual bool guessParamsFromFilename(const string& newFile, string* colorspace, PreMultiplicationEnum* filePremult, PixelComponentEnum* components, int* componentCount) OVERRIDE FINAL;
+    virtual bool guessParamsFromFilename(const string& newFile, string* colorspace, PixelComponentEnum* components, int* componentCount) OVERRIDE FINAL;
 };
 
 namespace Exr {
@@ -630,7 +630,7 @@ ReadEXRPlugin::decode(const string& filename,
  *
  * This function is only called once: when the filename is first set.
  *
- * Besides returning colorspace, premult, components, and componentcount, if it returns true
+ * Besides returning colorspace, components, and componentcount, if it returns true
  * this function may also set extra format-specific parameters using Param::setValue.
  * The parameters must not be animated, since their value must remain the same for a whole sequence.
  *
@@ -639,17 +639,16 @@ ReadEXRPlugin::decode(const string& filename,
  *
  * The colorspace may be set if available, else a default colorspace is used.
  *
- * You must also return the premultiplication state and pixel components of the image.
+ * You must also return the pixel components of the image.
  * When reading an image sequence, this is called only for the first image when the user actually selects the new sequence.
  **/
 bool
 ReadEXRPlugin::guessParamsFromFilename(const string& newFile,
                                        string* colorspace,
-                                       PreMultiplicationEnum* filePremult,
                                        PixelComponentEnum* components,
                                        int* componentCount)
 {
-    assert(colorspace && filePremult && components && componentCount);
+    assert(colorspace && components && componentCount);
 
     Exr::File* file = newFile.empty() ? NULL : Exr::FileManager::s_readerManager.get(newFile);
     if (!file) {
@@ -684,20 +683,6 @@ ReadEXRPlugin::guessParamsFromFilename(const string& newFile,
             *components = ePixelComponentNone;
             *componentCount = 0;
         }
-    }
-    /*
-       OpenEXR is always stored premultiplied.
-
-       See page five of the Technical Introduction PDF at http://www.openexr.com/documentation.html.
-
-       "alpha/opacity: 0.0 means the pixel is transparent; 1.0 means the pixel is
-       opaque. By convention, all color channels are premultiplied by alpha, so that
-       "foreground + (1-alpha) × background" performs a correct "over" operation."
-     */
-    if ((*components != ePixelComponentRGBA) && (*components != ePixelComponentAlpha)) {
-        *filePremult = eImageOpaque;
-    } else {
-        *filePremult = eImagePreMultiplied;
     }
 
     return true; // success

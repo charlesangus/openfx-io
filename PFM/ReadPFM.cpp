@@ -77,7 +77,7 @@ private:
      *
      * This function is only called once: when the filename is first set.
      *
-     * Besides returning colorspace, premult, components, and componentcount, if it returns true
+     * Besides returning colorspace, components, and componentcount, if it returns true
      * this function may also set extra format-specific parameters using Param::setValue.
      * The parameters must not be animated, since their value must remain the same for a whole sequence.
      *
@@ -86,10 +86,10 @@ private:
      *
      * The colorspace may be set if available, else a default colorspace is used.
      *
-     * You must also return the premultiplication state and pixel components of the image.
+     * You must also return the pixel components of the image.
      * When reading an image sequence, this is called only for the first image when the user actually selects the new sequence.
      **/
-    virtual bool guessParamsFromFilename(const string& filename, string* colorspace, PreMultiplicationEnum* filePremult, PixelComponentEnum* components, int* componentCount) OVERRIDE FINAL;
+    virtual bool guessParamsFromFilename(const string& filename, string* colorspace, PixelComponentEnum* components, int* componentCount) OVERRIDE FINAL;
 };
 
 /**
@@ -404,7 +404,7 @@ ReadPFMPlugin::getFrameBounds(const string& filename,
  *
  * This function is only called once: when the filename is first set.
  *
- * Besides returning colorspace, premult, components, and componentcount, if it returns true
+ * Besides returning colorspace, components, and componentcount, if it returns true
  * this function may also set extra format-specific parameters using Param::setValue.
  * The parameters must not be animated, since their value must remain the same for a whole sequence.
  *
@@ -413,17 +413,16 @@ ReadPFMPlugin::getFrameBounds(const string& filename,
  *
  * The colorspace may be set if available, else a default colorspace is used.
  *
- * You must also return the premultiplication state and pixel components of the image.
+ * You must also return the pixel components of the image.
  * When reading an image sequence, this is called only for the first image when the user actually selects the new sequence.
  **/
 bool
 ReadPFMPlugin::guessParamsFromFilename(const string& /*newFile*/,
                                        string* colorspace,
-                                       PreMultiplicationEnum* filePremult,
                                        PixelComponentEnum* components,
                                        int* componentCount)
 {
-    assert(colorspace && filePremult && components && componentCount);
+    assert(colorspace && components && componentCount);
 #ifdef OFX_IO_USING_OCIO
     // Unless otherwise specified, pfm files are assumed to be linear.
     *colorspace = OCIO::ROLE_SCENE_LINEAR;
@@ -464,15 +463,7 @@ ReadPFMPlugin::guessParamsFromFilename(const string& /*newFile*/,
         *components = ePixelComponentAlpha;
         *componentCount = 1;
     } else {
-        *filePremult = eImageOpaque;
-
         return false;
-    }
-    if ((*components != ePixelComponentRGBA) && (*components != ePixelComponentAlpha)) {
-        *filePremult = eImageOpaque;
-    } else {
-        // output is always premultiplied
-        *filePremult = eImagePreMultiplied;
     }
 
     return true;

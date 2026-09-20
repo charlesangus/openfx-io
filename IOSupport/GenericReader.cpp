@@ -175,17 +175,9 @@ enum MissingEnum {
 
 #define kParamFilePremult "filePremult"
 #define kParamFilePremultLabel "File Premult"
-#define kParamFilePremultHint                                                                                                                               \
-    "The image file being read is considered to have this premultiplication state.\n"                                                                       \
-    "To get UnPremultiplied (or \"unassociated alpha\") images, set the \"Output Premult\" parameter to Unpremultiplied. \n"                                \
-    "By default the value should be correctly be guessed by the image file, but this parameter can be edited if the metadatas inside the file are wrong.\n" \
-    "- Opaque means that the alpha channel is considered to be 1 (one), and it is not taken into account in colorspace conversion.\n"                       \
-    "- Premultiplied, red, green and blue channels are divided by the alpha channel "                                                                       \
-    "before applying the colorspace conversion, and re-multiplied by alpha after colorspace conversion.\n"                                                  \
-    "- UnPremultiplied, means that red, green and blue channels are not modified "                                                                          \
-    "before applying the colorspace conversion, and are multiplied by alpha after colorspace conversion.\n"                                                 \
-    "This is set automatically from the image file and the plugin, but can be adjusted if this information is wrong in the file metadata.\n"                \
-    "RGB images can only be Opaque, and Alpha images can only be Premultiplied (the value of this parameter doesn't matter)."
+#define kParamFilePremultHint                                                                                         \
+    "Has no effect: pixel values are output exactly as stored in the file, whatever their premultiplication state.\n" \
+    "Colorspace conversion is done on the decoded RGB data as-is."
 #define kParamFilePremultOptionOpaqueHint \
     "The image is opaque and so has no premultiplication state, as if the alpha component in all pixels were set to the white point.", "opaque"
 #define kParamFilePremultOptionPreMultipliedHint \
@@ -195,7 +187,7 @@ enum MissingEnum {
 
 #define kParamOutputPremult "outputPremult"
 #define kParamOutputPremultLabel "Output Premult"
-#define kParamOutputPremultHint "The alpha premultiplication in output of this node will have this state."
+#define kParamOutputPremultHint "Advisory only: reported to the host as the output clip's premultiplication state. Pixel values are never converted."
 
 #define kParamOutputComponents "outputComponents"
 #define kParamOutputComponentsLabel "Output Components"
@@ -284,7 +276,6 @@ GenericReaderPlugin::GenericReaderPlugin(OfxImageEffectHandle handle,
     , _afterLast(NULL)
     , _frameMode(NULL)
     , _outputComponents(NULL)
-    , _filePremult(NULL)
     , _outputPremult(NULL)
     , _timeDomainUserSet(NULL)
     , _customFPS(NULL)
@@ -318,7 +309,6 @@ GenericReaderPlugin::GenericReaderPlugin(OfxImageEffectHandle handle,
     _originalFrameRange = fetchInt2DParam(kParamOriginalFrameRange);
     _timeDomainUserSet = fetchBooleanParam(kParamTimeDomainUserEdited);
     _outputComponents = fetchChoiceParam(kParamOutputComponents);
-    _filePremult = fetchChoiceParam(kParamFilePremult);
     _outputPremult = fetchChoiceParam(kParamOutputPremult);
     _customFPS = fetchBooleanParam(kParamCustomFps);
     _fps = fetchDoubleParam(kParamFrameRate);
@@ -1168,123 +1158,6 @@ GenericReaderPlugin::fillWithBlack(const OfxRectI& renderWindow,
     setupAndFillWithBlack(fred, renderWindow, renderScale, dstPixelData, dstBounds, dstPixelComponents, dstPixelComponentCount, dstBitDepth, dstRowBytes);
 }
 
-static void
-setupAndProcess(PixelProcessorFilterBase& processor,
-                int premultChannel,
-                const OfxRectI& renderWindow,
-                const OfxPointD& renderScale,
-                const void* srcPixelData,
-                const OfxRectI& srcBounds,
-                PixelComponentEnum srcPixelComponents,
-                int srcPixelComponentCount,
-                BitDepthEnum srcPixelDepth,
-                int srcRowBytes,
-                void* dstPixelData,
-                const OfxRectI& dstBounds,
-                PixelComponentEnum dstPixelComponents,
-                int dstPixelComponentCount,
-                BitDepthEnum dstPixelDepth,
-                int dstRowBytes)
-{
-    assert(srcPixelData && dstPixelData);
-
-    // make sure bit depths are sane
-    if ((srcPixelDepth != dstPixelDepth) || (srcPixelComponents != dstPixelComponents)) {
-        throwSuiteStatusException(kOfxStatErrFormat);
-
-        return;
-    }
-
-    // set the images
-    processor.setDstImg(dstPixelData, dstBounds, dstPixelComponents, dstPixelComponentCount, dstPixelDepth, dstRowBytes);
-    processor.setSrcImg(srcPixelData, srcBounds, srcPixelComponents, srcPixelComponentCount, srcPixelDepth, srcRowBytes, 0);
-
-    // set the render window
-    processor.setRenderWindow(renderWindow, renderScale);
-
-    processor.setPremultMaskMix(true, premultChannel, 1.);
-
-    // Call the base class process member, this will call the derived templated process code
-    processor.process();
-}
-
-void
-GenericReaderPlugin::unPremultPixelData(const OfxRectI& renderWindow,
-                                        const OfxPointD& renderScale,
-                                        const void* srcPixelData,
-                                        const OfxRectI& srcBounds,
-                                        PixelComponentEnum srcPixelComponents,
-                                        int srcPixelComponentCount,
-                                        BitDepthEnum srcPixelDepth,
-                                        int srcRowBytes,
-                                        void* dstPixelData,
-                                        const OfxRectI& dstBounds,
-                                        PixelComponentEnum dstPixelComponents,
-                                        int dstPixelComponentCount,
-                                        BitDepthEnum dstBitDepth,
-                                        int dstRowBytes)
-{
-    assert(srcPixelData && dstPixelData);
-
-    // do the rendering
-    if ((dstBitDepth != eBitDepthFloat) || ((dstPixelComponents != ePixelComponentRGBA) && (dstPixelComponents != ePixelComponentRGB) && (dstPixelComponents != ePixelComponentAlpha))) {
-        throwSuiteStatusException(kOfxStatErrFormat);
-
-        return;
-    }
-    if (dstPixelComponents == ePixelComponentRGBA) {
-        if (!_supportsRGBA) {
-            throwSuiteStatusException(kOfxStatErrFormat);
-
-            return;
-        }
-        PixelCopierUnPremult<float, 4, 1, float, 4, 1> fred(*this);
-        setupAndProcess(fred, 3, renderWindow, renderScale, srcPixelData, srcBounds, srcPixelComponents, srcPixelComponentCount, srcPixelDepth, srcRowBytes, dstPixelData, dstBounds, dstPixelComponents, dstPixelComponentCount, dstBitDepth, dstRowBytes);
-    } else {
-        /// other pixel components means you want to copy only...
-        assert(false);
-    }
-}
-
-void
-GenericReaderPlugin::premultPixelData(const OfxRectI& renderWindow,
-                                      const OfxPointD& renderScale,
-                                      const void* srcPixelData,
-                                      const OfxRectI& srcBounds,
-                                      PixelComponentEnum srcPixelComponents,
-                                      int srcPixelComponentCount,
-                                      BitDepthEnum srcPixelDepth,
-                                      int srcRowBytes,
-                                      void* dstPixelData,
-                                      const OfxRectI& dstBounds,
-                                      PixelComponentEnum dstPixelComponents,
-                                      int dstPixelComponentCount,
-                                      BitDepthEnum dstBitDepth,
-                                      int dstRowBytes)
-{
-    assert(srcPixelData && dstPixelData);
-
-    // do the rendering
-    if ((dstBitDepth != eBitDepthFloat) || ((dstPixelComponents != ePixelComponentRGBA) && (dstPixelComponents != ePixelComponentRGB) && (dstPixelComponents != ePixelComponentAlpha))) {
-        throwSuiteStatusException(kOfxStatErrFormat);
-
-        return;
-    }
-
-    if (dstPixelComponents == ePixelComponentRGBA) {
-        if (!_supportsRGBA) {
-            throwSuiteStatusException(kOfxStatErrFormat);
-
-            return;
-        }
-        PixelCopierPremult<float, 4, 1, float, 4, 1> fred(*this);
-        setupAndProcess(fred, 3, renderWindow, renderScale, srcPixelData, srcBounds, srcPixelComponents, srcPixelComponentCount, srcPixelDepth, srcRowBytes, dstPixelData, dstBounds, dstPixelComponents, dstPixelComponentCount, dstBitDepth, dstRowBytes);
-    } else {
-        /// other pixel components means you want to copy only...
-        assert(false);
-    }
-}
-
 bool
 GenericReaderPlugin::getRegionOfDefinition(const RegionOfDefinitionArguments& args,
                                            OfxRectD& rod)
@@ -1679,13 +1552,11 @@ GenericReaderPlugin::render(const RenderArguments& args)
         PixelComponentEnum remappedComponents = it->comps;
 
         bool isColor = (it->comps == ePixelComponentRGB) || (it->comps == ePixelComponentRGBA);
-        bool isCustom = false;
         if (remappedComponents == ePixelComponentCustom) {
             MultiPlane::ImagePlaneDesc plane, pairedPlane;
             MultiPlane::ImagePlaneDesc::mapOFXComponentsTypeStringToPlanes(it->rawComps, &plane, &pairedPlane);
             const std::vector<std::string>& channels = plane.getChannels();
             isColor = ((channels.size() == 3 && channels[0] == "R" && channels[1] == "G" && channels[2] == "B") || (channels.size() == 4 && channels[0] == "R" && channels[1] == "G" && channels[2] == "B" && channels[3] == "A"));
-            isCustom = true;
 
             if (it->numChans == 3) {
                 remappedComponents = ePixelComponentRGB;
@@ -1703,32 +1574,8 @@ GenericReaderPlugin::render(const RenderArguments& args)
         }
 #endif
 
-        PreMultiplicationEnum filePremult = eImageUnPreMultiplied;
-        PreMultiplicationEnum outputPremult = eImageUnPreMultiplied;
-        if ((remappedComponents == ePixelComponentRGB) || (remappedComponents == ePixelComponentXY)) {
-            filePremult = outputPremult = eImageOpaque;
-        } else if (remappedComponents == ePixelComponentAlpha) {
-            filePremult = outputPremult = eImagePreMultiplied;
-        } else if ((it->comps == ePixelComponentRGBA) || (isCustom && isColor && (remappedComponents == ePixelComponentRGBA))) {
-            int premult_i;
-            _filePremult->getValue(premult_i);
-            filePremult = (PreMultiplicationEnum)premult_i;
-
-            int oPremult_i;
-            _outputPremult->getValue(oPremult_i);
-            outputPremult = (PreMultiplicationEnum)oPremult_i;
-        }
-
-        // we have to do the final premultiplication if:
-        // - pixelComponents is RGBA
-        //  AND
-        //   - buffer is PreMultiplied AND OCIO is not identity (OCIO works only on unpremultiplied data)
-        //   OR
-        //   - premult is unpremultiplied
-        bool mustPremult = (isColor && (remappedComponents == ePixelComponentRGBA) && ((filePremult == eImageUnPreMultiplied || !isOCIOIdentity) && outputPremult == eImagePreMultiplied));
-
-        if (!mustPremult && isOCIOIdentity && (!kSupportsRenderScale || (renderMipmapLevel == 0))) {
-            // no colorspace conversion, no premultiplication, no proxy, just read file
+        if (isOCIOIdentity && (!kSupportsRenderScale || (renderMipmapLevel == 0))) {
+            // no colorspace conversion, no proxy, just read file
             DBG(std::printf("decode (to dst)\n"));
 
             if (!_isMultiPlanar) {
@@ -1799,18 +1646,6 @@ GenericReaderPlugin::render(const RenderArguments& args)
 
             /// do the color-space conversion
             if (!isOCIOIdentity && isColor) {
-                if (filePremult == eImagePreMultiplied) {
-                    assert(remappedComponents == ePixelComponentRGBA);
-                    DBG(std::printf("unpremult (tmp in-place)\n"));
-                    // tmpPixelData[0] = tmpPixelData[1] = tmpPixelData[2] = tmpPixelData[3] = 0.5;
-                    unPremultPixelData(renderWindowNotRounded, args.renderScale, tmpPixelData, renderWindowFullRes, remappedComponents, it->numChans, firstDepth, tmpRowBytes, tmpPixelData, renderWindowFullRes, remappedComponents, it->numChans, firstDepth, tmpRowBytes);
-
-                    if (abort()) {
-                        return;
-                    }
-
-                    // assert(tmpPixelData[0] == 1. && tmpPixelData[1] == 1. && tmpPixelData[2] == 1. && tmpPixelData[3] == 0.5);
-                }
 #ifdef OFX_IO_USING_OCIO
                 DBG(std::printf("OCIO (tmp in-place)\n"));
                 _ocio->apply(args.time, renderWindowFullRes, args.renderScale, tmpPixelData, renderWindowFullRes, remappedComponents, it->numChans, tmpRowBytes);
@@ -1818,49 +1653,14 @@ GenericReaderPlugin::render(const RenderArguments& args)
             }
 
             if (kSupportsRenderScale && (downscaleLevels > 0)) {
-                if (!mustPremult) {
-                    // we can write directly to dstPixelData
-                    /// adjust the scale to match the given output image
-                    DBG(std::printf("scale (no premult, tmp to dst)\n"));
-                    scalePixelData(args.renderWindow, args.renderScale, renderWindowNotRounded, (unsigned int)downscaleLevels, tmpPixelData, remappedComponents,
-                                   it->numChans, firstDepth, renderWindowFullRes, tmpRowBytes, it->pixelData,
-                                   remappedComponents, it->numChans, firstDepth, firstBounds, it->rowBytes);
-                } else {
-                    // allocate a temporary image (we must avoid reading from dstPixelData, in case several threads are rendering the same area)
-                    int mem2RowBytes = (firstBounds.x2 - firstBounds.x1) * pixelBytes;
-                    size_t mem2Size = (size_t)(firstBounds.y2 - firstBounds.y1) * (size_t)mem2RowBytes;
-                    ImageMemory mem2(mem2Size, this);
-                    float* scaledPixelData = (float*)mem2.lock();
-
-                    /// adjust the scale to match the given output image
-                    DBG(std::printf("scale (tmp to scaled)\n"));
-                    scalePixelData(args.renderWindow, args.renderScale, renderWindowNotRounded, (unsigned int)downscaleLevels, tmpPixelData,
-                                   remappedComponents, it->numChans, firstDepth,
-                                   renderWindowFullRes, tmpRowBytes, scaledPixelData,
-                                   remappedComponents, it->numChans, firstDepth,
-                                   firstBounds, mem2RowBytes);
-
-                    if (abort()) {
-                        return;
-                    }
-
-                    // apply premult
-                    DBG(std::printf("premult (scaled to dst)\n"));
-                    // scaledPixelData[0] = scaledPixelData[1] = scaledPixelData[2] = 1.; scaledPixelData[3] = 0.5;
-                    premultPixelData(args.renderWindow, args.renderScale, scaledPixelData, firstBounds, remappedComponents, it->numChans, firstDepth, mem2RowBytes, it->pixelData, firstBounds, remappedComponents, it->numChans, firstDepth, it->rowBytes);
-                    // assert(dstPixelDataF[0] == 0.5 && dstPixelDataF[1] == 0.5 && dstPixelDataF[2] == 0.5 && dstPixelDataF[3] == 0.5);
-                }
+                /// adjust the scale to match the given output image
+                DBG(std::printf("scale (tmp to dst)\n"));
+                scalePixelData(args.renderWindow, args.renderScale, renderWindowNotRounded, (unsigned int)downscaleLevels, tmpPixelData, remappedComponents,
+                               it->numChans, firstDepth, renderWindowFullRes, tmpRowBytes, it->pixelData,
+                               remappedComponents, it->numChans, firstDepth, firstBounds, it->rowBytes);
             } else {
-                // copy
-                if (mustPremult) {
-                    DBG(std::printf("premult (no scale, tmp to dst)\n"));
-                    // tmpPixelData[0] = tmpPixelData[1] = tmpPixelData[2] = 1.; tmpPixelData[3] = 0.5;
-                    premultPixelData(args.renderWindow, args.renderScale, tmpPixelData, renderWindowFullRes, remappedComponents, it->numChans, firstDepth, tmpRowBytes, it->pixelData, firstBounds, remappedComponents, it->numChans, firstDepth, it->rowBytes);
-                    // assert(dstPixelDataF[0] == 0.5 && dstPixelDataF[1] == 0.5 && dstPixelDataF[2] == 0.5 && dstPixelDataF[3] == 0.5);
-                } else {
-                    DBG(std::printf("copy (no premult no scale, tmp to dst)\n"));
-                    copyPixelData(args.renderWindow, args.renderScale, tmpPixelData, renderWindowFullRes, remappedComponents, it->numChans, firstDepth, tmpRowBytes, it->pixelData, firstBounds, remappedComponents, it->numChans, firstDepth, it->rowBytes);
-                }
+                DBG(std::printf("copy (no scale, tmp to dst)\n"));
+                copyPixelData(args.renderWindow, args.renderScale, tmpPixelData, renderWindowFullRes, remappedComponents, it->numChans, firstDepth, tmpRowBytes, it->pixelData, firstBounds, remappedComponents, it->numChans, firstDepth, it->rowBytes);
             }
             mem.unlock();
         }
@@ -1993,10 +1793,9 @@ GenericReaderPlugin::changedFilename(const InstanceChangedArgs& args)
 #endif
         PixelComponentEnum components = ePixelComponentNone;
         int componentCount = 0;
-        PreMultiplicationEnum filePremult = eImageOpaque;
 
         assert(!_guessedParams->getValue());
-        bool success = guessParamsFromFilename(filename, &colorspace, &filePremult, &components, &componentCount);
+        bool success = guessParamsFromFilename(filename, &colorspace, &components, &componentCount);
         if (!success) {
             return;
         }
@@ -2059,23 +1858,8 @@ GenericReaderPlugin::changedFilename(const InstanceChangedArgs& args)
         // may not be called recursively during the createInstance action
         _ocio->refreshInputAndOutputState(timeDomain.min);
 #endif
-        // RGB is always Opaque, Alpha is always PreMultiplied
-        if (components == ePixelComponentRGB) {
-            filePremult = eImageOpaque;
-        } else if (components == ePixelComponentAlpha) {
-            filePremult = eImagePreMultiplied;
-        }
         if (components != ePixelComponentNone) {
             setOutputComponents(components);
-        }
-        _filePremult->setValue((int)filePremult);
-
-        if (components == ePixelComponentRGB) {
-            // RGB is always opaque
-            _outputPremult->setValue(eImageOpaque);
-        } else if (components == ePixelComponentAlpha) {
-            // Alpha is always premultiplied
-            _outputPremult->setValue(eImagePreMultiplied);
         }
 
         _guessedParams->setValue(true); // do not try to guess params anymore on this instance
@@ -2159,6 +1943,15 @@ GenericReaderPlugin::changedParam(const InstanceChangedArgs& args,
 
         _startingTime->setValue(oFirst);
         _startingTime->setDefault(oFirst);
+
+        // kParamStartingTime and kParamTimeOffset are two spellings of one
+        // mapping (timeOffset == startingTime - firstFrame); getTimeDomain()
+        // reads the former while getSequenceTime() reads the latter, so a
+        // timeOffset left over from the previous file makes the two disagree
+        // and every frame of the new sequence decodes out of range. Both
+        // firstFrame and startingTime were just set to oFirst above, so the
+        // offset that agrees with them is 0.
+        _timeOffset->setValue(0);
     } else if ((paramName == kParamFirstFrame) && (args.reason == eChangeUserEdit)) {
         int first;
         int oFirst, oLast;
@@ -2211,27 +2004,6 @@ GenericReaderPlugin::changedParam(const InstanceChangedArgs& args,
 
         _startingTime->setValue(offset + first);
         _timeDomainUserSet->setValue(true);
-    } else if ((paramName == kParamOutputComponents) && (args.reason == eChangeUserEdit)) {
-        PixelComponentEnum comps = getOutputComponents();
-        PreMultiplicationEnum premult = (PreMultiplicationEnum)_outputPremult->getValueAtTime(time);
-        if ((comps == ePixelComponentRGB) && (premult != eImageOpaque)) {
-            // RGB is always opaque
-            _outputPremult->setValue(eImageOpaque);
-        } else if ((comps == ePixelComponentAlpha) && (premult != eImagePreMultiplied)) {
-            // Alpha is always premultiplied
-            _outputPremult->setValue(eImagePreMultiplied);
-        }
-    } else if ((paramName == kParamOutputPremult) && (args.reason == eChangeUserEdit)) {
-        PreMultiplicationEnum premult = (PreMultiplicationEnum)_outputPremult->getValueAtTime(time);
-        PixelComponentEnum comps = getOutputComponents();
-        // reset to authorized values if necessary
-        if ((comps == ePixelComponentRGB) && (premult != eImageOpaque)) {
-            // RGB is always opaque
-            _outputPremult->setValue((int)eImageOpaque);
-        } else if ((comps == ePixelComponentAlpha) && (premult != eImagePreMultiplied)) {
-            // Alpha is always premultiplied
-            _outputPremult->setValue((int)eImagePreMultiplied);
-        }
     } else if (paramName == kParamCustomFps) {
         bool customFps = _customFPS->getValueAtTime(time);
         _fps->setEnabled(customFps);
@@ -3161,7 +2933,7 @@ GenericReaderDescribeInContextBegin(ImageEffectDescriptor& desc,
             param->appendOption(premultString(eImagePreMultiplied), kParamFilePremultOptionPreMultipliedHint);
             assert(param->getNOptions() == eImageUnPreMultiplied);
             param->appendOption(premultString(eImageUnPreMultiplied), kParamFilePremultOptionUnPreMultipliedHint);
-            param->setDefault(eImagePreMultiplied); // images should be premultiplied in a compositing context
+            param->setDefault(eImagePreMultiplied);
         }
         param->setAnimates(false);
         desc.addClipPreferencesSlaveParam(*param);
@@ -3182,7 +2954,7 @@ GenericReaderDescribeInContextBegin(ImageEffectDescriptor& desc,
             param->appendOption(premultString(eImagePreMultiplied), kParamFilePremultOptionPreMultipliedHint);
             assert(param->getNOptions() == eImageUnPreMultiplied);
             param->appendOption(premultString(eImageUnPreMultiplied), kParamFilePremultOptionUnPreMultipliedHint);
-            param->setDefault(eImagePreMultiplied); // images should be premultiplied in a compositing context
+            param->setDefault(eImagePreMultiplied);
         }
         param->setAnimates(false);
         desc.addClipPreferencesSlaveParam(*param);
