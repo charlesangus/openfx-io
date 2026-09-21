@@ -887,7 +887,11 @@ GenericWriterPlugin::render(const RenderArguments& args)
     // This controls how we split into parts
     LayerViewsPartsEnum partsSplit = getPartsSplittingPreference();
 
-    if ((viewNames.size() == 1) && (args.planes.size() == 1)) {
+    // encode() only knows a channel count and names the channels as a color plane of that size;
+    // a single non-color plane keeps its layer and channel names through the parts API.
+    const bool singleColorPlane = (args.planes.size() == 1) && (args.planes.front() == kFnOfxImagePlaneColour);
+
+    if ((viewNames.size() == 1) && singleColorPlane) {
         // Regular case, just do a simple part
         int viewIndex = viewNames.begin()->first;
         InputImagesHolder dataHolder; // owns srcImg and tmpMem
