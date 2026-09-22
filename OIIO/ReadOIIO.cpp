@@ -23,6 +23,7 @@
  */
 
 #include <algorithm>
+#include <cctype>
 #include <climits>
 #include <cmath>
 #include <cstddef>
@@ -905,6 +906,46 @@ caseInsensitiveCompare(const string& lhs,
     return lowerLhs == lowerRhs;
 }
 
+/// The layer a multi-part OpenEXR part is named after: its "name" attribute (exposed by OpenImageIO
+/// as oiio:subimagename) with a trailing ".view" component dropped. Empty when the part has no name
+/// and when the name is one OpenImageIO synthesised ("subimageNN") for a part written without one,
+/// since adopting that would turn an unprefixed R,G,B,A part into a "subimageNN" layer.
+static string
+layerNameFromPartName(const ImageSpec& part,
+                      const vector<string>& viewsList)
+{
+    const ParamValue* nameValue = part.find_attribute("oiio:subimagename", TypeDesc::STRING);
+
+    if (!nameValue) {
+        return string();
+    }
+    string name(*(const char**)nameValue->data());
+    static const string synthesisedPrefix("subimage");
+    if ((name.size() > synthesisedPrefix.size()) && (name.compare(0, synthesisedPrefix.size(), synthesisedPrefix) == 0)) {
+        bool digitsOnly = true;
+        for (std::size_t i = synthesisedPrefix.size(); i < name.size(); ++i) {
+            if (!std::isdigit(static_cast<unsigned char>(name[i]))) {
+                digitsOnly = false;
+                break;
+            }
+        }
+        if (digitsOnly) {
+            return string();
+        }
+    }
+    size_t lastdot = name.find_last_of(".");
+    if (lastdot != string::npos) {
+        string suffix = name.substr(lastdot + 1);
+        for (std::size_t i = 0; i < viewsList.size(); ++i) {
+            if (caseInsensitiveCompare(viewsList[i], suffix)) {
+                return name.substr(0, lastdot);
+            }
+        }
+    }
+
+    return name;
+}
+
 /// encodedLayerName is in the format view.layer.channel
 static void
 extractLayerName(const string& encodedLayerName,
@@ -1124,11 +1165,7 @@ ReadOIIOPlugin::getLayers(const vector<ImageSpec>& subimages,
 
             if (layer.empty()) {
                 // The layer name is empty, for OpenEXR 2 files, check for the "name" attribute (converted to oiio:subimagename by OIIO) which may contain the layer name.
-                const ParamValue* nameValue = subimages[i].find_attribute("oiio:subimagename", TypeDesc::STRING);
-                if (nameValue) {
-                    const char* dataPtr = *(const char**)nameValue->data();
-                    layer = string(dataPtr);
-                }
+                layer = layerNameFromPartName(subimages[i], views);
             }
 
             assert(foundView != layersMap->end());
