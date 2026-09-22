@@ -1388,6 +1388,17 @@ WriteOIIOPlugin::beginEncodeParts(void* user_data,
                 if (viewsToRender.size() > 1) {
                     partSpec.attribute("view", view->second);
                 }
+                // OpenEXR requires every part of a multi-part file to carry a unique name, and
+                // OpenImageIO synthesises "subimageNN" for a part written without one; a reader
+                // that falls back on the part name for unprefixed channels then reports the color
+                // part as a "subimageNN" layer. The view keeps the name unique across views.
+                if (!plane.getPlaneLabel().empty()) {
+                    string partName = plane.getPlaneLabel();
+                    if (viewsToRender.size() > 1) {
+                        partName += "." + view->second;
+                    }
+                    partSpec.attribute("oiio:subimagename", partName);
+                }
                 data->specs[specIndex] = partSpec;
 
                 ++specIndex;
