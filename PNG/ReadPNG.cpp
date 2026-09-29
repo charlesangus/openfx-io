@@ -82,7 +82,7 @@ OFXS_NAMESPACE_ANONYMOUS_ENTER
 #define kSupportsRGBA true
 #define kSupportsRGB true
 #define kSupportsXY false
-#define kSupportsAlpha false
+#define kSupportsAlpha true
 #define kSupportsTiles false
 
 #define OFX_IO_LIBPNG_VERSION (PNG_LIBPNG_VER_MAJOR * 10000 + PNG_LIBPNG_VER_MINOR * 100 + PNG_LIBPNG_VER_RELEASE)
@@ -1406,7 +1406,6 @@ ReadPNGPlugin::guessParamsFromFilename(const string& filename,
 
     switch (nChannels) {
     case 1:
-        assert(false);
         *components = ePixelComponentAlpha;
         break;
     case 2:

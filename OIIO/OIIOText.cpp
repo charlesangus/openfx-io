@@ -566,6 +566,7 @@ OIIOTextPluginFactory::describeInContext(ImageEffectDescriptor& desc,
 
     srcClip->addSupportedComponent(ePixelComponentRGBA);
     srcClip->addSupportedComponent(ePixelComponentRGB);
+    srcClip->addSupportedComponent(ePixelComponentAlpha);
     srcClip->setTemporalClipAccess(false);
     srcClip->setSupportsTiles(kSupportsTiles);
     srcClip->setIsMask(false);
@@ -574,6 +575,7 @@ OIIOTextPluginFactory::describeInContext(ImageEffectDescriptor& desc,
     ClipDescriptor* dstClip = desc.defineClip(kOfxImageEffectOutputClipName);
     dstClip->addSupportedComponent(ePixelComponentRGBA);
     dstClip->addSupportedComponent(ePixelComponentRGB);
+    dstClip->addSupportedComponent(ePixelComponentAlpha);
     dstClip->setSupportsTiles(kSupportsTiles);
 
     // make some pages and to things in
