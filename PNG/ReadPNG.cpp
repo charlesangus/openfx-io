@@ -370,12 +370,18 @@ getPNGInfo(png_structp sp,
 {
     png_read_info(sp, ip);
 
+    png_byte origColorType = png_get_color_type(sp, ip);
+
     // Auto-convert 1-, 2-, and 4- bit images to 8 bits, palette to RGB,
     // and transparency to alpha.
     png_set_expand(sp);
 
-    /* Expand the grayscale to 24-bit RGB if necessary. */
-    png_set_gray_to_rgb(sp);
+    // A plain grayscale file (no alpha channel of its own) keeps its single
+    // channel, so it round-trips as Alpha; every other colour type still
+    // widens to RGB the way this reader always has.
+    if (origColorType != PNG_COLOR_TYPE_GRAY) {
+        png_set_gray_to_rgb(sp);
+    }
 
     // PNG files are naturally big-endian
     if (littleendian()) {
