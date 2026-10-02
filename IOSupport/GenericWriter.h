@@ -144,7 +144,23 @@ namespace IO {
          **/
         virtual void restoreStateFromParams();
 
+        // Indexes NatronOfxImageEffectPropOCIOFileColourspaces, so the order is fixed by the host.
+        enum FileColourCategoryEnum {
+            eFileColourCategory8Bit = 0,
+            eFileColourCategory16Bit,
+            eFileColourCategoryLog,
+            eFileColourCategoryFloat,
+        };
+
     protected:
+        /**
+         * @brief Picks which of the host's per-file-type default colourspaces a new Write gets.
+         * Called after onOutputFileChanged() has set the output space to the format's legacy guess,
+         * which the default implementation classifies. bitDepth is 0 for the format's default depth.
+         * Override when the plugin knows the bit depth it will write.
+         **/
+        virtual FileColourCategoryEnum guessFileColourCategory(const std::string& filename, int bitDepth) const;
+
         void setOutputComponentsParam(OFX::PixelComponentEnum components);
 
         /**

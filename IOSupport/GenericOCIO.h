@@ -61,6 +61,18 @@ typedef OCIO_SHARED_PTR<OpenGLBuilder> OpenGLBuilderRcPtr;
 
 #include "IOUtility.h"
 
+// These come from ofxColour.h (OFX 1.5) and Natron's ofxNatron.h; they are
+// repeated here so the plugins still build against the older bundled headers.
+#ifndef kOfxImageEffectPropOCIOConfig
+#define kOfxImageEffectPropOCIOConfig "OfxImageEffectPropOCIOConfig"
+#endif
+#ifndef NatronOfxImageEffectPropOCIOWorkingColourspace
+#define NatronOfxImageEffectPropOCIOWorkingColourspace "NatronOfxImageEffectPropOCIOWorkingColourspace"
+#endif
+#ifndef NatronOfxImageEffectPropOCIOFileColourspaces
+#define NatronOfxImageEffectPropOCIOFileColourspaces "NatronOfxImageEffectPropOCIOFileColourspaces"
+#endif
+
 NAMESPACE_OFX_ENTER
 NAMESPACE_OFX_IO_ENTER
 
@@ -160,6 +172,11 @@ public:
 
 #endif
     bool configIsDefault() const;
+    bool hostConfigSource(std::string* source) const;
+    // fileSpaces is indexed 8-bit, 16-bit, log, float, as the host publishes it.
+    bool hostColourDefaults(std::string* workingSpace, std::vector<std::string>* fileSpaces) const;
+    bool isSceneLinearColorspace(const std::string& name) const;
+    bool isLogColorspace(const std::string& name) const;
 
     // Each of the following functions re-reads the OCIO config: Not optimal but more clear.
     static void describeInContextInput(OFX::ImageEffectDescriptor& desc, OFX::ContextEnum context, OFX::PageParamDescriptor* page, const char* inputSpaceNameDefault, const char* inputSpaceLabel = kOCIOParamInputSpaceLabel);
@@ -189,6 +206,7 @@ public:
 
 private:
     void loadConfig();
+    std::string configSource() const;
     void inputCheck(double time);
     void outputCheck(double time);
 

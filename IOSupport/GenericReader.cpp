@@ -1849,8 +1849,21 @@ GenericReaderPlugin::changedFilename(const InstanceChangedArgs& args)
                 _ocio->setInputColorspace(colorSpaceStr);
                 setColorSpace = false;
             }
+            string workingSpace;
+            std::vector<string> fileSpaces;
+            const bool hostDefaults = _ocio->hostColourDefaults(&workingSpace, &fileSpaces);
             if (setColorSpace) {
-                _ocio->setInputColorspace(colorspace.c_str());
+                string inputSpace = colorspace;
+                if (hostDefaults) {
+                    const string& fileSpace = fileSpaces[guessFileColourCategory(filename, colorspace)];
+                    if (_ocio->hasColorspace(fileSpace.c_str())) {
+                        inputSpace = fileSpace;
+                    }
+                }
+                _ocio->setInputColorspace(inputSpace.c_str());
+            }
+            if (hostDefaults && _ocio->hasColorspace(workingSpace.c_str())) {
+                _ocio->setOutputColorspace(workingSpace.c_str());
             }
         }
 
@@ -1865,6 +1878,24 @@ GenericReaderPlugin::changedFilename(const InstanceChangedArgs& args)
         _guessedParams->setValue(true); // do not try to guess params anymore on this instance
     } // if ( args.reason == eChangeUserEdit && !_guessedParams->getValue() ) {
 } // GenericReaderPlugin::changedFilename
+
+GenericReaderPlugin::FileColourCategoryEnum
+GenericReaderPlugin::guessFileColourCategory(const string& /*filename*/,
+                                             const string& legacyGuess) const
+{
+#ifdef OFX_IO_USING_OCIO
+    if (_ocio->isSceneLinearColorspace(legacyGuess)) {
+        return eFileColourCategoryFloat;
+    }
+    if (_ocio->isLogColorspace(legacyGuess)) {
+        return eFileColourCategoryLog;
+    }
+#else
+    (void)legacyGuess;
+#endif
+
+    return eFileColourCategory8Bit;
+}
 
 void
 GenericReaderPlugin::changedParam(const InstanceChangedArgs& args,
