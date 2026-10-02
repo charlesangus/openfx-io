@@ -286,6 +286,7 @@ private:
     virtual LayerViewsPartsEnum getPartsSplittingPreference() const OVERRIDE FINAL;
     virtual int getViewToRender() const OVERRIDE FINAL;
     virtual void onOutputFileChanged(const string& filename, bool setColorSpace) OVERRIDE FINAL;
+    virtual FileColourCategoryEnum guessFileColourCategory(const string& filename, int bitDepth) const OVERRIDE FINAL;
 
     /**
      * @brief Does the given filename support alpha channel.
@@ -789,6 +790,30 @@ WriteOIIOPlugin::onOutputFileChanged(const string& filename,
 
     refreshParamsVisibility(filename);
 } // WriteOIIOPlugin::onOutputFileChanged
+
+WriteOIIOPlugin::FileColourCategoryEnum
+WriteOIIOPlugin::guessFileColourCategory(const string& filename,
+                                         int /*bitDepth*/) const
+{
+    int bitDepth_i;
+    _bitDepth->getValue(bitDepth_i);
+    switch (getDefaultBitDepth(filename, (ETuttlePluginBitDepth)bitDepth_i)) {
+    case eTuttlePluginBitDepth16f:
+    case eTuttlePluginBitDepth32f:
+    case eTuttlePluginBitDepth64f:
+        return eFileColourCategoryFloat;
+    case eTuttlePluginBitDepth10:
+    case eTuttlePluginBitDepth12:
+    case eTuttlePluginBitDepth16:
+        if (has_suffix(filename, ".cin") || has_suffix(filename, ".dpx") || has_suffix(filename, ".CIN") || has_suffix(filename, ".DPX")) {
+            return eFileColourCategoryLog;
+        }
+
+        return eFileColourCategory16Bit;
+    default:
+        return eFileColourCategory8Bit;
+    }
+}
 
 /**
  * @brief Does the given filename support alpha channel.

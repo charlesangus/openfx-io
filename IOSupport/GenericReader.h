@@ -162,6 +162,12 @@ protected:
      **/
     virtual FileColourCategoryEnum guessFileColourCategory(const std::string& filename, const std::string& legacyGuess) const;
 
+    /**
+     * @brief Lets a plugin name the colourspace the file's own metadata declares. When it returns true
+     * the name replaces the host's per-file-type default for a new Read, so it must exist in the config.
+     **/
+    virtual bool guessFileColourspaceFromMetadata(const std::string& filename, std::string* colourspace) const;
+
     OFX::ChoiceParam* _missingFrameParam; //< what to do on missing frame
 
     OfxStatus getFilenameAtTime(double t, std::string* filename) const;

@@ -434,6 +434,8 @@ private:
      * When reading an image sequence, this is called only for the first image when the user actually selects the new sequence.
      **/
     virtual bool guessParamsFromFilename(const string& filename, string* colorspace, PixelComponentEnum* components, int* componentCount) OVERRIDE FINAL;
+    virtual FileColourCategoryEnum guessFileColourCategory(const string& filename, const string& legacyGuess) const OVERRIDE FINAL;
+    virtual bool guessFileColourspaceFromMetadata(const string& filename, string* colourspace) const OVERRIDE FINAL;
     virtual bool isVideoStream(const string& /*filename*/) OVERRIDE FINAL { return false; }
 
     virtual void decode(const string& filename,
@@ -1571,6 +1573,20 @@ ReadOIIOPlugin::guessColorspace(const string& filename,
 #ifdef OFX_IO_USING_OCIO
     // make sure the OCIO config is const
     GenericOCIO const* ocio = _ocio.get();
+    string hostWorkingSpace;
+    std::vector<string> hostFileSpaces;
+    if (ocio->hostColourDefaults(&hostWorkingSpace, &hostFileSpaces)) {
+        // Only a colourspace the file names outright is kept; the host's per-file-type
+        // defaults replace the display-name heuristics below.
+        if (colorSpaceValue) {
+            const char* named = *(const char**)colorSpaceValue->data();
+            if (named && ocio->hasColorspace(named)) {
+                *colorspace = named;
+            }
+        }
+
+        return;
+    }
 #endif
 
     // we found a color-space hint, use it to do the color-space conversion
@@ -1793,6 +1809,54 @@ ReadOIIOPlugin::guessColorspace(const string& filename,
         *colorspace = colorSpaceStr;
     }
 } // ReadOIIOPlugin::guessColorspace
+
+bool
+ReadOIIOPlugin::guessFileColourspaceFromMetadata(const string& filename,
+                                                 string* colourspace) const
+{
+    vector<ImageSpec> subimages;
+    getSpecs(filename, &subimages);
+    if (subimages.empty()) {
+        return false;
+    }
+    const ParamValue* colorSpaceValue = subimages[0].find_attribute("oiio:ColorSpace", TypeDesc::STRING);
+    if (!colorSpaceValue) {
+        return false;
+    }
+    const char* named = *(const char**)colorSpaceValue->data();
+    if (!named) {
+        return false;
+    }
+    *colourspace = named;
+
+    return true;
+}
+
+ReadOIIOPlugin::FileColourCategoryEnum
+ReadOIIOPlugin::guessFileColourCategory(const string& filename,
+                                        const string& legacyGuess) const
+{
+    vector<ImageSpec> subimages;
+    getSpecs(filename, &subimages);
+    if (subimages.empty()) {
+        return GenericReaderPlugin::guessFileColourCategory(filename, legacyGuess);
+    }
+    switch (subimages[0].format.basetype) {
+    case TypeDesc::HALF:
+    case TypeDesc::FLOAT:
+    case TypeDesc::DOUBLE:
+        return eFileColourCategoryFloat;
+    case TypeDesc::USHORT:
+    case TypeDesc::SHORT:
+        if (endsWith(filename, ".cin") || endsWith(filename, ".dpx") || endsWith(filename, ".CIN") || endsWith(filename, ".DPX")) {
+            return eFileColourCategoryLog;
+        }
+
+        return eFileColourCategory16Bit;
+    default:
+        return eFileColourCategory8Bit;
+    }
+}
 
 /**
  * @brief Called when the input image/video file changed.

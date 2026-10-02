@@ -1855,9 +1855,14 @@ GenericReaderPlugin::changedFilename(const InstanceChangedArgs& args)
             if (setColorSpace) {
                 string inputSpace = colorspace;
                 if (hostDefaults) {
-                    const string& fileSpace = fileSpaces[guessFileColourCategory(filename, colorspace)];
-                    if (_ocio->hasColorspace(fileSpace.c_str())) {
-                        inputSpace = fileSpace;
+                    string metadataSpace;
+                    if (guessFileColourspaceFromMetadata(filename, &metadataSpace) && _ocio->hasColorspace(metadataSpace.c_str())) {
+                        inputSpace = metadataSpace;
+                    } else {
+                        const string& fileSpace = fileSpaces[guessFileColourCategory(filename, colorspace)];
+                        if (_ocio->hasColorspace(fileSpace.c_str())) {
+                            inputSpace = fileSpace;
+                        }
                     }
                 }
                 _ocio->setInputColorspace(inputSpace.c_str());
@@ -1895,6 +1900,13 @@ GenericReaderPlugin::guessFileColourCategory(const string& /*filename*/,
 #endif
 
     return eFileColourCategory8Bit;
+}
+
+bool
+GenericReaderPlugin::guessFileColourspaceFromMetadata(const string& /*filename*/,
+                                                      string* /*colourspace*/) const
+{
+    return false;
 }
 
 void
