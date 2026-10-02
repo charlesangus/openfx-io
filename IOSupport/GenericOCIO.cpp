@@ -1039,8 +1039,13 @@ GenericOCIO::changedParam(const InstanceChangedArgs& args,
     assert(_created);
 #ifdef OFX_IO_USING_OCIO
     if ((paramName == kOCIOParamConfigFile) && (args.reason != eChangeTime)) {
-        // must clear persistent message, or render() is not called by Nuke after an error
-        _parent->clearPersistentMessage();
+        // With a host-supplied config the host owns the unresolved-colourspace
+        // report; clearing here would drop it until the next push.
+        const bool hostOwnsConfig = hostConfigSource(NULL);
+        if (!hostOwnsConfig) {
+            // must clear persistent message, or render() is not called by Nuke after an error
+            _parent->clearPersistentMessage();
+        }
         // The host re-pushes an unchanged config on every project load; touching
         // the colourspaces then would rewrite explicit names into roles and
         // silently replace unresolved ones the host reports instead.
@@ -1070,7 +1075,7 @@ GenericOCIO::changedParam(const InstanceChangedArgs& args,
             string inputSpaceName;
             getInputColorspaceAtTime(args.time, inputSpaceName);
             int inputSpaceIndex = _config->getIndexForColorSpace(inputSpaceName.c_str());
-            if (inputSpaceIndex < 0) {
+            if (inputSpaceIndex < 0 && !hostOwnsConfig) {
                 inputSpaceName = existingColorSpaceOrFallback(_config, inputSpaceName);
                 _inputSpace->setValue(inputSpaceName);
             }
@@ -1080,7 +1085,7 @@ GenericOCIO::changedParam(const InstanceChangedArgs& args,
             string outputSpaceName;
             getOutputColorspaceAtTime(args.time, outputSpaceName);
             int outputSpaceIndex = _config->getIndexForColorSpace(outputSpaceName.c_str());
-            if (outputSpaceIndex < 0) {
+            if (outputSpaceIndex < 0 && !hostOwnsConfig) {
                 outputSpaceName = existingColorSpaceOrFallback(_config, outputSpaceName);
                 _outputSpace->setValue(outputSpaceName);
             }
