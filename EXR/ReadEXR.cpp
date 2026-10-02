@@ -87,7 +87,7 @@ namespace Imf_ = OPENEXR_IMF_NAMESPACE;
 #define kSupportsRGBA true
 #define kSupportsRGB false
 #define kSupportsXY false
-#define kSupportsAlpha false
+#define kSupportsAlpha true
 #define kSupportsTiles false
 
 class ReadEXRPlugin
@@ -559,8 +559,9 @@ ReadEXRPlugin::decode(const string& filename,
 {
     assert(renderScale.x == 1. && renderScale.y == 1.);
     unused(renderScale);
-    /// we only support RGBA output clip
-    if ((pixelComponents != ePixelComponentRGBA) || (pixelComponentCount != 4)) {
+    if (!(((pixelComponents == ePixelComponentRGBA) && (pixelComponentCount == 4)) ||
+          ((pixelComponents == ePixelComponentRGB) && (pixelComponentCount == 3)) ||
+          ((pixelComponents == ePixelComponentAlpha) && (pixelComponentCount == 1)))) {
         throwSuiteStatusException(kOfxStatErrFormat);
 
         return;
@@ -573,10 +574,19 @@ ReadEXRPlugin::decode(const string& filename,
     for (int y = roi.y1; y < roi.y2; ++y) {
         map<Exr::Channel, DecodingChannelsMap> channels;
         for (Exr::File::ChannelsMap::const_iterator it = file->channel_map.begin(); it != file->channel_map.end(); ++it) {
-            DecodingChannelsMap d;
+            // The destination layout may lack some of the file's channels (A-only has no R, G or B).
+            int offset = (int)it->first;
+            if (pixelComponents == ePixelComponentAlpha) {
+                offset = it->first == Exr::Channel_alpha ? 0 : -1;
+            } else if (pixelComponents == ePixelComponentRGB && it->first == Exr::Channel_alpha) {
+                offset = -1;
+            }
+            if (offset < 0 || offset >= pixelComponentCount) {
+                continue;
+            }
 
-            /// This line means we only support FLOAT dst images with the RGBA format.
-            d.buf = (float*)((char*)pixelData + (y - roi.y1) * rowBytes) + (int)it->first;
+            DecodingChannelsMap d;
+            d.buf = (float*)((char*)pixelData + (y - roi.y1) * rowBytes) + offset;
 
             d.subsampled = it->second == "BY" || it->second == "RY";
             d.channelName = it->second;
@@ -601,10 +611,10 @@ ReadEXRPlugin::decode(const string& filename,
         for (map<Exr::Channel, DecodingChannelsMap>::const_iterator z = channels.begin(); z != channels.end(); ++z) {
             if (!z->second.subsampled) {
                 fbuf.insert(z->second.channelName.c_str(),
-                            Imf_::Slice(Imf_::FLOAT, (char*)(z->second.buf /*+ file->dataOffset*/), sizeof(float) * 4, 0));
+                            Imf_::Slice(Imf_::FLOAT, (char*)(z->second.buf /*+ file->dataOffset*/), sizeof(float) * pixelComponentCount, 0));
             } else {
                 fbuf.insert(z->second.channelName.c_str(),
-                            Imf_::Slice(Imf_::FLOAT, (char*)(z->second.buf /*+ file->dataOffset*/), sizeof(float) * 4, 0, 2, 2));
+                            Imf_::Slice(Imf_::FLOAT, (char*)(z->second.buf /*+ file->dataOffset*/), sizeof(float) * pixelComponentCount, 0, 2, 2));
             }
         }
         {
