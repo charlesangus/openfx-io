@@ -1835,10 +1835,19 @@ GenericWriterPlugin::outputFileChanged(InstanceChangeReason reason,
     }
     bool setColorSpace = true;
 #ifdef OFX_IO_USING_OCIO
+    string workingSpace;
+    vector<string> fileSpaces;
+    const bool hostDefaults = _ocio->hostColourDefaults(&workingSpace, &fileSpaces);
     // if outputSpaceSet == true (output space was manually set by user) then setColorSpace = false
     if (_outputSpaceSet->getValue()) {
         setColorSpace = false;
     }
+    // restoreStateFromParams() calls this on every project load; guessing there would
+    // overwrite an existing Write's saved spaces with the current project defaults.
+    if (hostDefaults && restoreExistingWriter && (reason != eChangeUserEdit)) {
+        setColorSpace = false;
+    }
+    const bool guessColorSpace = setColorSpace;
     // We should always try to parse from string first,
     // following recommendations from http://opencolorio.org/configurations/spi_pipeline.html
     // However, as discussed in https://groups.google.com/forum/#!topic/ocio-dev/dfOxq8Nanl8
@@ -1888,6 +1897,17 @@ GenericWriterPlugin::outputFileChanged(InstanceChangeReason reason,
     // give the derived class a chance to initialize any data structure it may need
     onOutputFileChanged(filename, setColorSpace);
 #ifdef OFX_IO_USING_OCIO
+    if (hostDefaults && guessColorSpace) {
+        if (setColorSpace) {
+            const string& fileSpace = fileSpaces[guessFileColourCategory(filename, 0)];
+            if (_ocio->hasColorspace(fileSpace.c_str())) {
+                _ocio->setOutputColorspace(fileSpace.c_str());
+            }
+        }
+        if (_ocio->hasColorspace(workingSpace.c_str())) {
+            _ocio->setInputColorspace(workingSpace.c_str());
+        }
+    }
     _ocio->refreshInputAndOutputState(0);
 #endif
 
@@ -1901,6 +1921,24 @@ GenericWriterPlugin::outputFileChanged(InstanceChangeReason reason,
         _guessedParams->setValue(true);
     }
 } // GenericWriterPlugin::outputFileChanged
+
+GenericWriterPlugin::FileColourCategoryEnum
+GenericWriterPlugin::guessFileColourCategory(const string& /*filename*/,
+                                             int /*bitDepth*/) const
+{
+#ifdef OFX_IO_USING_OCIO
+    string legacyGuess;
+    _ocio->getOutputColorspace(legacyGuess);
+    if (_ocio->isSceneLinearColorspace(legacyGuess)) {
+        return eFileColourCategoryFloat;
+    }
+    if (_ocio->isLogColorspace(legacyGuess)) {
+        return eFileColourCategoryLog;
+    }
+#endif
+
+    return eFileColourCategory8Bit;
+}
 
 void
 GenericWriterPlugin::changedParam(const InstanceChangedArgs& args,
@@ -1977,6 +2015,12 @@ GenericWriterPlugin::changedParam(const InstanceChangedArgs& args,
     } else if (((paramName == kOCIOParamOutputSpace) || (paramName == kOCIOParamOutputSpaceChoice)) && (args.reason == eChangeUserEdit)) {
         // set the outputSpaceSet param to true https://github.com/MrKepzie/Natron/issues/1492
         _outputSpaceSet->setValue(true);
+    } else if ((paramName == kOCIOParamWorkingSpace) && (args.reason != eChangeTime)) {
+        string workingSpace;
+        if (_ocio->hostWorkingSpace(&workingSpace)) {
+            _ocio->setInputColorspace(workingSpace.c_str());
+            _ocio->refreshInputAndOutputState(args.time);
+        }
 #endif
     }
 
@@ -2463,6 +2507,7 @@ GenericWriterDescribeInContextBegin(ImageEffectDescriptor& desc,
     // insert OCIO parameters
     GenericOCIO::describeInContextInput(desc, context, page, inputSpaceNameDefault);
     GenericOCIO::describeInContextOutput(desc, context, page, outputSpaceNameDefault, kParamOutputSpaceLabel);
+    GenericOCIO::describeInContextWorkingSpace(desc, page);
     {
         BooleanParamDescriptor* param = desc.defineBooleanParam(kParamOutputSpaceSet);
         param->setEvaluateOnChange(false);

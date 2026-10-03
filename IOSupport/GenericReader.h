@@ -138,6 +138,14 @@ public:
         eBeforeAfterError,
     };
 
+    // Indexes NatronOfxImageEffectPropOCIOFileColourspaces, so the order is fixed by the host.
+    enum FileColourCategoryEnum {
+        eFileColourCategory8Bit = 0,
+        eFileColourCategory16Bit,
+        eFileColourCategoryLog,
+        eFileColourCategoryFloat,
+    };
+
 protected:
     /**
      * @brief Called from changedParam() when kParamFilename is changed for any reason other than eChangeTime.
@@ -146,6 +154,19 @@ protected:
      * Any derived implementation must call GenericReaderPlugin::changedFilename() first
      **/
     virtual void changedFilename(const OFX::InstanceChangedArgs& args);
+
+    /**
+     * @brief Picks which of the host's per-file-type default colourspaces a new Read gets.
+     * legacyGuess is the colourspace guessParamsFromFilename() returned. Override when the
+     * file's bit depth is known, since a single legacy name cannot tell 8-bit from 16-bit.
+     **/
+    virtual FileColourCategoryEnum guessFileColourCategory(const std::string& filename, const std::string& legacyGuess) const;
+
+    /**
+     * @brief Lets a plugin name the colourspace the file's own metadata declares. When it returns true
+     * the name replaces the host's per-file-type default for a new Read, so it must exist in the config.
+     **/
+    virtual bool guessFileColourspaceFromMetadata(const std::string& filename, std::string* colourspace) const;
 
     OFX::ChoiceParam* _missingFrameParam; //< what to do on missing frame
 

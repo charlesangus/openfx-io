@@ -265,6 +265,14 @@ private:
     BooleanParam* _maskApply;
     BooleanParam* _maskInvert;
 
+    StringParam* _ocioConfigFile;
+    GenericOCIO::Mutex _configMutex;
+    OCIO::ConstConfigRcPtr _config;
+    string _configName;
+    string _procConfig;
+
+    OCIO::ConstConfigRcPtr getConfig(string* name);
+
     GenericOCIO::Mutex _procMutex;
     OCIO::ConstProcessorRcPtr _proc;
     double _procSlope_r;
@@ -303,6 +311,7 @@ OCIOCDLTransformPlugin::OCIOCDLTransformPlugin(OfxImageEffectHandle handle)
     , _mix(NULL)
     , _maskApply(NULL)
     , _maskInvert(NULL)
+    , _ocioConfigFile(NULL)
     , _procSlope_r(-1)
     , _procSlope_g(-1)
     , _procSlope_b(-1)
@@ -330,6 +339,7 @@ OCIOCDLTransformPlugin::OCIOCDLTransformPlugin(OfxImageEffectHandle handle)
     _saturation = fetchDoubleParam(kParamSaturation);
     _direction = fetchChoiceParam(kParamDirection);
     _readFromFile = fetchBooleanParam(kParamReadFromFile);
+    _ocioConfigFile = fetchStringParam(kOCIOParamConfigFile);
     _file = fetchStringParam(kParamFile);
     _version = fetchIntParam(kParamVersion);
     _cccid = fetchStringParam(kParamCCCID);
@@ -501,6 +511,26 @@ OCIOCDLTransformPlugin::copyPixelData(bool unpremult,
     }
 } // OCIOCDLTransformPlugin::copyPixelData
 
+OCIO::ConstConfigRcPtr
+OCIOCDLTransformPlugin::getConfig(string* name)
+{
+    string source = getPropertySet().propGetString(kOfxImageEffectPropOCIOConfig, false);
+    if (source.empty()) {
+        _ocioConfigFile->getValue(source);
+    }
+    GenericOCIO::AutoMutex guard(_configMutex);
+    if (!_config || (source != _configName)) {
+        AutoSetAndRestoreThreadLocale locale;
+        _config = source.empty() ? OCIO::GetCurrentConfig() : OCIO::Config::CreateFromFile(source.c_str());
+        _configName = source;
+    }
+    if (name) {
+        *name = source;
+    }
+
+    return _config;
+}
+
 OCIO::ConstProcessorRcPtr
 OCIOCDLTransformPlugin::getProcessor(OfxTime time)
 {
@@ -523,11 +553,14 @@ OCIOCDLTransformPlugin::getProcessor(OfxTime time)
     int directioni = _direction->getValueAtTime(time);
 
     try {
+        string configName;
+        OCIO::ConstConfigRcPtr config = getConfig(&configName);
+        if (!config) {
+            throw std::runtime_error("OCIO: no current config");
+        }
         GenericOCIO::AutoMutex guard(_procMutex);
-        if (!_proc || (_procSlope_r != slope_r) || (_procSlope_g != slope_g) || (_procSlope_b != slope_b) || (_procOffset_r != offset_r) || (_procOffset_g != offset_g) || (_procOffset_b != offset_b) || (_procPower_r != power_r) || (_procPower_g != power_g) || (_procPower_b != power_b) || (_procSaturation != saturation) || (_procDirection != directioni)) {
+        if (!_proc || (_procConfig != configName) || (_procSlope_r != slope_r) || (_procSlope_g != slope_g) || (_procSlope_b != slope_b) || (_procOffset_r != offset_r) || (_procOffset_g != offset_g) || (_procOffset_b != offset_b) || (_procPower_r != power_r) || (_procPower_g != power_g) || (_procPower_b != power_b) || (_procSaturation != saturation) || (_procDirection != directioni)) {
             AutoSetAndRestoreThreadLocale locale;
-            OCIO::ConstConfigRcPtr config = OCIO::GetCurrentConfig();
-            assert(config);
             OCIO::CDLTransformRcPtr cc = OCIO::CDLTransform::Create();
 #if OCIO_VERSION_HEX >= 0x02000000
             double sop[9] = {
@@ -564,6 +597,7 @@ OCIOCDLTransformPlugin::getProcessor(OfxTime time)
             }
 
             _proc = config->getProcessor(cc);
+            _procConfig = configName;
             _procSlope_r = slope_r;
             _procSlope_g = slope_g;
             _procSlope_b = slope_b;
@@ -879,7 +913,7 @@ OCIOCDLTransformPlugin::isIdentity(const IsIdentityArguments& args,
 
     try {
         AutoSetAndRestoreThreadLocale locale;
-        OCIO::ConstConfigRcPtr config = OCIO::GetCurrentConfig();
+        OCIO::ConstConfigRcPtr config = getConfig(NULL);
         if (!config) {
             throw std::runtime_error("OCIO: no current config");
         }
@@ -1082,7 +1116,7 @@ OCIOCDLTransformPlugin::changedParam(const InstanceChangedArgs& args,
 
                 try {
                     AutoSetAndRestoreThreadLocale locale;
-                    OCIO::ConstConfigRcPtr config = OCIO::GetCurrentConfig();
+                    OCIO::ConstConfigRcPtr config = getConfig(NULL);
                     if (!config) {
                         throw std::runtime_error("OCIO: no current config");
                     }
@@ -1313,6 +1347,15 @@ OCIOCDLTransformPluginFactory::describeInContext(ImageEffectDescriptor& desc,
         PushButtonParamDescriptor* param = desc.definePushButtonParam(kParamReload);
         param->setLabel(kParamReloadLabel);
         param->setHint(kParamReloadHint);
+        if (page) {
+            page->addChild(*param);
+        }
+    }
+    {
+        StringParamDescriptor* param = desc.defineStringParam(kOCIOParamConfigFile);
+        param->setLabelAndHint(kOCIOParamConfigFileLabel);
+        param->setIsSecretAndDisabled(true);
+        param->setAnimates(false);
         if (page) {
             page->addChild(*param);
         }

@@ -322,18 +322,16 @@ OCIOLookTransformPlugin::OCIOLookTransformPlugin(OfxImageEffectHandle handle)
         _lookChoice->setIsSecretAndDisabled(true);
         _lookAppend->setIsSecretAndDisabled(true);
         _singleLook->setIsSecretAndDisabled(true);
+    } else if (gHostIsNatron) {
+        // the choice menu can only be modified in Natron
+        // Natron supports changing the entries in a choiceparam
+        // Nuke (at least up to 8.0v3) does not
+        buildLookChoiceMenu(config, _lookChoice);
     } else if (!_ocio->configIsDefault()) {
-        if (gHostIsNatron) {
-            // the choice menu can only be modified in Natron
-            // Natron supports changing the entries in a choiceparam
-            // Nuke (at least up to 8.0v3) does not
-            buildLookChoiceMenu(config, _lookChoice);
-        } else {
-            _lookChoice->setIsSecretAndDisabled(true);
-            _lookAppend->setIsSecretAndDisabled(true);
-            _singleLook->setValue(true);
-            _singleLook->setIsSecretAndDisabled(true);
-        }
+        _lookChoice->setIsSecretAndDisabled(true);
+        _lookAppend->setIsSecretAndDisabled(true);
+        _singleLook->setValue(true);
+        _singleLook->setIsSecretAndDisabled(true);
     }
 }
 
@@ -904,21 +902,26 @@ OCIOLookTransformPlugin::changedParam(const InstanceChangedArgs& args,
         _ocio->changedParam(args, paramName);
     }
     // this must be done after handling by GenericOCIO (to make sure the new config is loaded)
-    if ((paramName == kOCIOParamConfigFile) && (args.reason == eChangeUserEdit)) {
-        if (!_ocio->configIsDefault()) {
-            if (gHostIsNatron) {
-                // the choice menu can only be modified in Natron
-                // Natron supports changing the entries in a choiceparam
-                // Nuke (at least up to 8.0v3) does not
-                AutoSetAndRestoreThreadLocale locale;
-                OCIO::ConstConfigRcPtr config = _ocio->getConfig();
-                buildLookChoiceMenu(config, _lookChoice);
-            } else {
-                _lookChoice->setIsSecretAndDisabled(true);
-                _lookAppend->setIsSecretAndDisabled(true);
-                _singleLook->setValue(true);
-                _singleLook->setIsSecretAndDisabled(true);
-            }
+    if ((paramName == kOCIOParamConfigFile) && (args.reason != eChangeTime)) {
+        AutoSetAndRestoreThreadLocale locale;
+        OCIO::ConstConfigRcPtr config = _ocio->getConfig();
+        if (!config) {
+            _lookChoice->setIsSecretAndDisabled(true);
+            _lookAppend->setIsSecretAndDisabled(true);
+            _singleLook->setIsSecretAndDisabled(true);
+        } else if (gHostIsNatron) {
+            // the choice menu can only be modified in Natron
+            // Natron supports changing the entries in a choiceparam
+            // Nuke (at least up to 8.0v3) does not
+            buildLookChoiceMenu(config, _lookChoice);
+            _lookChoice->setIsSecretAndDisabled(false);
+            _lookAppend->setIsSecretAndDisabled(false);
+            _singleLook->setIsSecretAndDisabled(false);
+        } else if (!_ocio->configIsDefault()) {
+            _lookChoice->setIsSecretAndDisabled(true);
+            _lookAppend->setIsSecretAndDisabled(true);
+            _singleLook->setValue(true);
+            _singleLook->setIsSecretAndDisabled(true);
         }
     }
 } // OCIOLookTransformPlugin::changedParam
