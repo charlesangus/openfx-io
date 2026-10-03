@@ -2015,6 +2015,12 @@ GenericWriterPlugin::changedParam(const InstanceChangedArgs& args,
     } else if (((paramName == kOCIOParamOutputSpace) || (paramName == kOCIOParamOutputSpaceChoice)) && (args.reason == eChangeUserEdit)) {
         // set the outputSpaceSet param to true https://github.com/MrKepzie/Natron/issues/1492
         _outputSpaceSet->setValue(true);
+    } else if ((paramName == kOCIOParamWorkingSpace) && (args.reason != eChangeTime)) {
+        string workingSpace;
+        if (_ocio->hostWorkingSpace(&workingSpace)) {
+            _ocio->setInputColorspace(workingSpace.c_str());
+            _ocio->refreshInputAndOutputState(args.time);
+        }
 #endif
     }
 
@@ -2501,6 +2507,7 @@ GenericWriterDescribeInContextBegin(ImageEffectDescriptor& desc,
     // insert OCIO parameters
     GenericOCIO::describeInContextInput(desc, context, page, inputSpaceNameDefault);
     GenericOCIO::describeInContextOutput(desc, context, page, outputSpaceNameDefault, kParamOutputSpaceLabel);
+    GenericOCIO::describeInContextWorkingSpace(desc, page);
     {
         BooleanParamDescriptor* param = desc.defineBooleanParam(kParamOutputSpaceSet);
         param->setEvaluateOnChange(false);

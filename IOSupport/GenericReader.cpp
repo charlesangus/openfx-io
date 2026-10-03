@@ -2079,6 +2079,12 @@ GenericReaderPlugin::changedParam(const InstanceChangedArgs& args,
     } else if (((paramName == kOCIOParamInputSpace) || (paramName == kOCIOParamInputSpaceChoice)) && (args.reason == eChangeUserEdit)) {
         // set the inputSpaceSet param to true https://github.com/MrKepzie/Natron/issues/1492
         _inputSpaceSet->setValue(true);
+    } else if ((paramName == kOCIOParamWorkingSpace) && (args.reason != eChangeTime)) {
+        string workingSpace;
+        if (_ocio->hostWorkingSpace(&workingSpace)) {
+            _ocio->setOutputColorspace(workingSpace.c_str());
+            _ocio->refreshInputAndOutputState(time);
+        }
 #endif
     }
 
@@ -3116,6 +3122,7 @@ GenericReaderDescribeInContextEnd(ImageEffectDescriptor& desc,
         }
     }
     GenericOCIO::describeInContextOutput(desc, context, page, outputSpaceNameDefault);
+    GenericOCIO::describeInContextWorkingSpace(desc, page);
     GenericOCIO::describeInContextContext(desc, context, page);
     {
         PushButtonParamDescriptor* param = desc.definePushButtonParam(kOCIOHelpButton);

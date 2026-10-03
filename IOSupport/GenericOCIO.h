@@ -79,6 +79,9 @@ NAMESPACE_OFX_IO_ENTER
 #ifdef OFX_IO_USING_OCIO
 #define kOCIOParamConfigFile "ocioConfigFile"
 #define kOCIOParamConfigFileLabel "OCIO Config File", "OpenColorIO configuration file"
+// Hidden: a host that owns the config sets it to its working colourspace, which a reader's
+// output and a writer's input then follow.
+#define kOCIOParamWorkingSpace "ocioWorkingSpace"
 #define kOCIOParamInputSpace "ocioInputSpace"
 #define kOCIOParamInputSpaceLabel "Input Colorspace"
 #define kOCIOParamInputSpaceHint "Input data is taken to be in this colorspace."
@@ -175,6 +178,7 @@ public:
     bool hostConfigSource(std::string* source) const;
     // fileSpaces is indexed 8-bit, 16-bit, log, float, as the host publishes it.
     bool hostColourDefaults(std::string* workingSpace, std::vector<std::string>* fileSpaces) const;
+    bool hostWorkingSpace(std::string* name) const;
     bool isSceneLinearColorspace(const std::string& name) const;
     bool isLogColorspace(const std::string& name) const;
 
@@ -182,6 +186,7 @@ public:
     static void describeInContextInput(OFX::ImageEffectDescriptor& desc, OFX::ContextEnum context, OFX::PageParamDescriptor* page, const char* inputSpaceNameDefault, const char* inputSpaceLabel = kOCIOParamInputSpaceLabel);
     static void describeInContextOutput(OFX::ImageEffectDescriptor& desc, OFX::ContextEnum context, OFX::PageParamDescriptor* page, const char* outputSpaceNameDefault, const char* outputSpaceLabel = kOCIOParamOutputSpaceLabel);
     static void describeInContextContext(OFX::ImageEffectDescriptor& desc, OFX::ContextEnum context, OFX::PageParamDescriptor* page);
+    static void describeInContextWorkingSpace(OFX::ImageEffectDescriptor& desc, OFX::PageParamDescriptor* page);
 
 #ifdef OFX_IO_USING_OCIO
     void setValues(const std::string& inputSpace, const std::string& outputSpace);
@@ -215,6 +220,7 @@ private:
 #ifdef OFX_IO_USING_OCIO
     std::string _ocioConfigFileName;
     OFX::StringParam* _ocioConfigFile; //< filepath of the OCIO config file
+    OFX::StringParam* _workingSpace;
     OFX::StringParam* _inputSpace;
     OFX::StringParam* _outputSpace;
 #ifdef OFX_OCIO_CHOICE

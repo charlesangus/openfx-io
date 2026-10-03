@@ -292,6 +292,7 @@ GenericOCIO::GenericOCIO(ImageEffect* parent)
 #ifdef OFX_IO_USING_OCIO
     , _ocioConfigFileName()
     , _ocioConfigFile(NULL)
+    , _workingSpace(NULL)
     , _inputSpace(NULL)
     , _outputSpace(NULL)
 #ifdef OFX_OCIO_CHOICE
@@ -315,6 +316,9 @@ GenericOCIO::GenericOCIO(ImageEffect* parent)
     _ocioConfigFile = _parent->fetchStringParam(kOCIOParamConfigFile);
     if (hostConfigSource(NULL)) {
         _ocioConfigFile->setIsSecret(true);
+    }
+    if (_parent->paramExists(kOCIOParamWorkingSpace)) {
+        _workingSpace = _parent->fetchStringParam(kOCIOParamWorkingSpace);
     }
     if (_parent->paramExists(kOCIOParamInputSpace)) {
         _inputSpace = _parent->fetchStringParam(kOCIOParamInputSpace);
@@ -496,6 +500,23 @@ GenericOCIO::hostConfigSource(string* source) const
     }
 
     return true;
+}
+
+bool
+GenericOCIO::hostWorkingSpace(string* name) const
+{
+#ifdef OFX_IO_USING_OCIO
+    if (!_workingSpace || !hostConfigSource(NULL)) {
+        return false;
+    }
+    _workingSpace->getValue(*name);
+
+    return !name->empty() && hasColorspace(name->c_str());
+#else
+    (void)name;
+
+    return false;
+#endif
 }
 
 bool
@@ -1052,7 +1073,7 @@ GenericOCIO::changedParam(const InstanceChangedArgs& args,
         const bool configChanged = !_config || (configSource() != _ocioConfigFileName);
         // compute canonical inputSpace and outputSpace before changing the config,
         // if different from inputSpace and outputSpace they must be set to the canonical value after changing ocio config
-        if (configChanged && _inputSpace) {
+        if (configChanged && !hostOwnsConfig && _inputSpace) {
             string inputSpace;
             getInputColorspaceAtTime(args.time, inputSpace);
             string inputSpaceCanonical = canonicalizeColorSpace(_config, inputSpace);
@@ -1060,7 +1081,7 @@ GenericOCIO::changedParam(const InstanceChangedArgs& args,
                 _inputSpace->setValue(inputSpaceCanonical);
             }
         }
-        if (configChanged && _outputSpace) {
+        if (configChanged && !hostOwnsConfig && _outputSpace) {
             string outputSpace;
             getOutputColorspaceAtTime(args.time, outputSpace);
             string outputSpaceCanonical = canonicalizeColorSpace(_config, outputSpace);
@@ -1568,6 +1589,25 @@ GenericOCIO::describeInContextOutput(ImageEffectDescriptor& desc,
 #endif
 #endif // ifdef OFX_IO_USING_OCIO
 } // GenericOCIO::describeInContextOutput
+
+void
+GenericOCIO::describeInContextWorkingSpace(ImageEffectDescriptor& desc,
+                                           PageParamDescriptor* page)
+{
+#ifdef OFX_IO_USING_OCIO
+    StringParamDescriptor* param = desc.defineStringParam(kOCIOParamWorkingSpace);
+    param->setLabel("OCIO Working Space");
+    param->setAnimates(false);
+    param->setIsSecretAndDisabled(true);
+    param->setDefault("");
+    if (page) {
+        page->addChild(*param);
+    }
+#else
+    (void)desc;
+    (void)page;
+#endif
+}
 
 void
 GenericOCIO::describeInContextContext(ImageEffectDescriptor& desc,
