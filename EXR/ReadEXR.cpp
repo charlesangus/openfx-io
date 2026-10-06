@@ -23,6 +23,7 @@
  */
 
 #include <algorithm>
+#include <cstddef>
 #ifdef DEBUG
 #include <iostream>
 #endif
@@ -87,7 +88,7 @@ namespace Imf_ = OPENEXR_IMF_NAMESPACE;
 #define kSupportsRGBA true
 #define kSupportsRGB false
 #define kSupportsXY false
-#define kSupportsAlpha false
+#define kSupportsAlpha true
 #define kSupportsTiles false
 
 class ReadEXRPlugin
@@ -538,12 +539,6 @@ ReadEXRPlugin::changedParam(const InstanceChangedArgs& args,
     GenericReaderPlugin::changedParam(args, paramName);
 }
 
-struct DecodingChannelsMap {
-    float* buf;
-    bool subsampled;
-    string channelName;
-};
-
 void
 ReadEXRPlugin::decode(const string& filename,
                       OfxTime /*time*/,
@@ -559,8 +554,8 @@ ReadEXRPlugin::decode(const string& filename,
 {
     assert(renderScale.x == 1. && renderScale.y == 1.);
     unused(renderScale);
-    /// we only support RGBA output clip
-    if ((pixelComponents != ePixelComponentRGBA) || (pixelComponentCount != 4)) {
+    if (!(((pixelComponents == ePixelComponentRGBA) && (pixelComponentCount == 4)) ||
+          ((pixelComponents == ePixelComponentAlpha) && (pixelComponentCount == 1)))) {
         throwSuiteStatusException(kOfxStatErrFormat);
 
         return;
@@ -570,41 +565,57 @@ ReadEXRPlugin::decode(const string& filename,
     OfxRectI roi = bounds; // used to be dstImg->getRegionOfDefinition(); why?
     assert(kSupportsTiles || (renderWindow.x1 == file->dataWindow.x1 && renderWindow.x2 == file->dataWindow.x2 && renderWindow.y1 == file->dataWindow.y1 && renderWindow.y2 == file->dataWindow.y2));
 
+    const Imath::Box2i& dispwin = file->inputfile->header().displayWindow();
+    const Imath::Box2i& datawin = file->inputfile->header().dataWindow();
+
+    // A whole scanline is decoded at once, so the destination must span the data window horizontally.
+    if ((datawin.min.x + file->dataOffset < roi.x1) || (datawin.max.x + file->dataOffset >= roi.x2)) {
+        setPersistentMessage(Message::eMessageError, "", "OpenEXR error: destination image does not cover the data window");
+        throwSuiteStatusException(kOfxStatFailed);
+
+        return;
+    }
+
+    // Channels the file lacks, and pixels outside its data window, read as 0.
+    const size_t rowFloats = (size_t)(roi.x2 - roi.x1) * pixelComponentCount;
     for (int y = roi.y1; y < roi.y2; ++y) {
-        map<Exr::Channel, DecodingChannelsMap> channels;
-        for (Exr::File::ChannelsMap::const_iterator it = file->channel_map.begin(); it != file->channel_map.end(); ++it) {
-            DecodingChannelsMap d;
+        float* row = (float*)((char*)pixelData + (ptrdiff_t)(y - roi.y1) * rowBytes);
+        std::fill(row, row + rowFloats, 0.f);
+    }
 
-            /// This line means we only support FLOAT dst images with the RGBA format.
-            d.buf = (float*)((char*)pixelData + (y - roi.y1) * rowBytes) + (int)it->first;
+    const ptrdiff_t xStride = (ptrdiff_t)sizeof(float) * pixelComponentCount;
 
-            d.subsampled = it->second == "BY" || it->second == "RY";
-            d.channelName = it->second;
-            channels.insert(make_pair(it->first, d));
-        }
-
-        const Imath::Box2i& dispwin = file->inputfile->header().displayWindow();
-        const Imath::Box2i& datawin = file->inputfile->header().dataWindow();
+    for (int y = roi.y1; y < roi.y2; ++y) {
         int exrY = dispwin.max.y - y;
-        // int r = roi.x2;
-        // int x = roi.x1;
-
-        // const int X = (std::max)(x, datawin.min.x + file->dataOffset);
-        // const int R = (std::min)(r, datawin.max.x + file->dataOffset + 1);
 
         // if we're below or above the data window
-        if ((exrY < datawin.min.y) || (exrY > datawin.max.y) /* || R <= X*/) {
+        if ((exrY < datawin.min.y) || (exrY > datawin.max.y)) {
             continue;
         }
 
+        char* row = (char*)pixelData + (ptrdiff_t)(y - roi.y1) * rowBytes;
         Imf_::FrameBuffer fbuf;
-        for (map<Exr::Channel, DecodingChannelsMap>::const_iterator z = channels.begin(); z != channels.end(); ++z) {
-            if (!z->second.subsampled) {
-                fbuf.insert(z->second.channelName.c_str(),
-                            Imf_::Slice(Imf_::FLOAT, (char*)(z->second.buf /*+ file->dataOffset*/), sizeof(float) * 4, 0));
+        for (Exr::File::ChannelsMap::const_iterator it = file->channel_map.begin(); it != file->channel_map.end(); ++it) {
+            int component;
+            if (pixelComponents == ePixelComponentAlpha) {
+                if (it->first != Exr::Channel_alpha) {
+                    continue;
+                }
+                component = 0;
             } else {
-                fbuf.insert(z->second.channelName.c_str(),
-                            Imf_::Slice(Imf_::FLOAT, (char*)(z->second.buf /*+ file->dataOffset*/), sizeof(float) * 4, 0, 2, 2));
+                component = (int)it->first;
+            }
+            const bool subsampled = it->second == "BY" || it->second == "RY";
+
+            // OpenEXR addresses sample x at base + (x / xSampling) * xStride, with x in file coordinates,
+            // so the base is shifted for the first sample of the data window to land on its destination column.
+            const ptrdiff_t firstColumn = datawin.min.x + file->dataOffset - roi.x1;
+            const ptrdiff_t firstSample = subsampled ? datawin.min.x / 2 : datawin.min.x;
+            char* base = row + (firstColumn - firstSample) * xStride + component * (ptrdiff_t)sizeof(float);
+            if (!subsampled) {
+                fbuf.insert(it->second.c_str(), Imf_::Slice(Imf_::FLOAT, base, xStride, 0));
+            } else {
+                fbuf.insert(it->second.c_str(), Imf_::Slice(Imf_::FLOAT, base, xStride, 0, 2, 2));
             }
         }
         {
