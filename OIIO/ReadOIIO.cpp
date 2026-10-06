@@ -778,20 +778,38 @@ ReadOIIOPlugin::getClipComponents(const ClipComponentsArguments& args,
     // ask for the color components from the input (needed for the Sync connection to work)
     clipComponents.addClipPlane(*_syncClip, kFnOfxImagePlaneColour);
 
+    // The layers of a sequence can differ from frame to frame, and _outputLayerMenu was built
+    // from a single frame, so it only stands in when the frame at args.time cannot be read.
+    LayersUnionVect frameLayers;
+    bool frameRead = false;
     {
-        AutoMutex lock(_outputLayerMenuMutex);
-        for (LayersUnionVect::iterator it = _outputLayerMenu.begin(); it != _outputLayerMenu.end(); ++it) {
-            string component;
-            if (it->first == kReadOIIOColorLayer) {
-                continue;
-            } else {
-                MultiPlane::ImagePlaneDesc plane(it->first, "", "", it->second.layer.channelNames);
-                clipComponents.addClipPlane(*_outputClip, MultiPlane::ImagePlaneDesc::mapPlaneToOFXPlaneString(plane));
+        string filename;
+        if (getFilenameAtTime(args.time, &filename) == kOfxStatOK) {
+            vector<ImageSpec> subimages;
+            getSpecs(filename, &subimages);
+            if (!subimages.empty()) {
+                ViewsLayersMap layersMap;
+                getLayers(subimages, &layersMap, &frameLayers);
+                frameRead = true;
             }
         }
     }
+    if (!frameRead) {
+        AutoMutex lock(_outputLayerMenuMutex);
+        frameLayers = _outputLayerMenu;
+    }
 
-    // Also add the color plane
+    for (LayersUnionVect::const_iterator it = frameLayers.begin(); it != frameLayers.end(); ++it) {
+        if (it->first == kReadOIIOColorLayer) {
+            continue;
+        }
+        MultiPlane::ImagePlaneDesc plane(it->first, "", "", it->second.layer.channelNames);
+        clipComponents.addClipPlane(*_outputClip, MultiPlane::ImagePlaneDesc::mapPlaneToOFXPlaneString(plane));
+    }
+
+    // The color plane is declared even on a frame that lacks the layer selected in the output
+    // layer menu: decodePlane() reports that frame as a missing-layer error rather than
+    // silently producing something else.
     PixelComponentEnum outputPixelComponents = getOutputComponents();
     int nOutputComps = 0;
     switch (outputPixelComponents) {
