@@ -232,6 +232,14 @@ private:
     BooleanParam* _maskApply;
     BooleanParam* _maskInvert;
 
+    StringParam* _ocioConfigFile;
+    GenericOCIO::Mutex _configMutex;
+    OCIO::ConstConfigRcPtr _config;
+    string _configName;
+    string _procConfig;
+
+    OCIO::ConstConfigRcPtr getConfig(string* name);
+
     GenericOCIO::Mutex _procMutex;
     OCIO::ConstProcessorRcPtr _proc;
     string _procFile;
@@ -257,6 +265,7 @@ OCIOFileTransformPlugin::OCIOFileTransformPlugin(OfxImageEffectHandle handle)
     , _mix(NULL)
     , _maskApply(NULL)
     , _maskInvert(NULL)
+    , _ocioConfigFile(NULL)
     , _procDirection(-1)
     , _procInterpolation(-1)
 #if defined(OFX_SUPPORTS_OPENGLRENDER)
@@ -269,6 +278,7 @@ OCIOFileTransformPlugin::OCIOFileTransformPlugin(OfxImageEffectHandle handle)
     assert((!_srcClip && getContext() == eContextGenerator) || (_srcClip && (!_srcClip->isConnected() || _srcClip->getPixelComponents() == ePixelComponentRGBA || _srcClip->getPixelComponents() == ePixelComponentRGB)));
     _maskClip = fetchClip(getContext() == eContextPaint ? "Brush" : "Mask");
     assert(!_maskClip || !_maskClip->isConnected() || _maskClip->getPixelComponents() == ePixelComponentAlpha);
+    _ocioConfigFile = fetchStringParam(kOCIOParamConfigFile);
     _file = fetchStringParam(kParamFile);
     _version = fetchIntParam(kParamVersion);
     _cccid = fetchStringParam(kParamCCCID);
@@ -288,6 +298,26 @@ OCIOFileTransformPlugin::OCIOFileTransformPlugin(OfxImageEffectHandle handle)
 
 OCIOFileTransformPlugin::~OCIOFileTransformPlugin()
 {
+}
+
+OCIO::ConstConfigRcPtr
+OCIOFileTransformPlugin::getConfig(string* name)
+{
+    string source = getPropertySet().propGetString(kOfxImageEffectPropOCIOConfig, false);
+    if (source.empty()) {
+        _ocioConfigFile->getValue(source);
+    }
+    GenericOCIO::AutoMutex guard(_configMutex);
+    if (!_config || (source != _configName)) {
+        AutoSetAndRestoreThreadLocale locale;
+        _config = source.empty() ? OCIO::GetCurrentConfig() : OCIO::Config::CreateFromFile(source.c_str());
+        _configName = source;
+    }
+    if (name) {
+        *name = source;
+    }
+
+    return _config;
 }
 
 /* set up and run a copy processor */
@@ -449,12 +479,13 @@ OCIOFileTransformPlugin::getProcessor(OfxTime time)
 
     try {
         AutoSetAndRestoreThreadLocale locale;
-        OCIO::ConstConfigRcPtr config = OCIO::GetCurrentConfig();
+        string configName;
+        OCIO::ConstConfigRcPtr config = getConfig(&configName);
         if (!config) {
             throw std::runtime_error("OCIO: No current config");
         }
         GenericOCIO::AutoMutex guard(_procMutex);
-        if (!_proc || (_procFile != file) || (_procCCCId != cccid) || (_procDirection != directioni) || (_procInterpolation != interpolationi)) {
+        if (!_proc || (_procConfig != configName) || (_procFile != file) || (_procCCCId != cccid) || (_procDirection != directioni) || (_procInterpolation != interpolationi)) {
             OCIO::FileTransformRcPtr transform = OCIO::FileTransform::Create();
             transform->setSrc(file.c_str());
             transform->setCCCId(cccid.c_str());
@@ -482,6 +513,7 @@ OCIOFileTransformPlugin::getProcessor(OfxTime time)
             }
 
             _proc = config->getProcessor(transform, OCIO::TRANSFORM_DIR_FORWARD);
+            _procConfig = configName;
             _procFile = file;
             _procCCCId = cccid;
             _procDirection = directioni;
@@ -952,6 +984,15 @@ OCIOFileTransformPluginFactory::describeInContext(ImageEffectDescriptor& desc,
         PushButtonParamDescriptor* param = desc.definePushButtonParam(kParamReload);
         param->setLabel(kParamReloadLabel);
         param->setHint(kParamReloadHint);
+        if (page) {
+            page->addChild(*param);
+        }
+    }
+    {
+        StringParamDescriptor* param = desc.defineStringParam(kOCIOParamConfigFile);
+        param->setLabelAndHint(kOCIOParamConfigFileLabel);
+        param->setIsSecretAndDisabled(true);
+        param->setAnimates(false);
         if (page) {
             page->addChild(*param);
         }

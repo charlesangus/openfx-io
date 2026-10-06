@@ -362,6 +362,7 @@ private:
     virtual bool isImageFile(const string& fileExtension) const OVERRIDE FINAL;
 
     virtual void onOutputFileChanged(const string& newFile, bool setColorSpace) OVERRIDE FINAL;
+    virtual FileColourCategoryEnum guessFileColourCategory(const string& filename, int bitDepth) const OVERRIDE FINAL;
 
     virtual void changedParam(const InstanceChangedArgs& args, const string& paramName) OVERRIDE FINAL;
 
@@ -862,6 +863,13 @@ WritePNGPlugin::onOutputFileChanged(const string& /*filename*/,
 #endif
     }
 } // WritePNGPlugin::onOutputFileChanged
+
+WritePNGPlugin::FileColourCategoryEnum
+WritePNGPlugin::guessFileColourCategory(const string& /*filename*/,
+                                        int /*bitDepth*/) const
+{
+    return (_bitdepth->getValue() == ePNGBitDepthUShort) ? eFileColourCategory16Bit : eFileColourCategory8Bit;
+}
 
 class WritePNGPluginFactory
     : public PluginFactoryHelper<WritePNGPluginFactory> {

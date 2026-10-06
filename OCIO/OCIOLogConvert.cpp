@@ -180,6 +180,11 @@ private:
     void loadConfig(double time);
 
 private:
+    string hostConfigSource() const
+    {
+        return getPropertySet().propGetString(kOfxImageEffectPropOCIOConfig, false);
+    }
+
     // do not need to delete these, the ImageEffect is managing them for us
     Clip* _dstClip;
     Clip* _srcClip;
@@ -237,6 +242,10 @@ OCIOLogConvertPlugin::OCIOLogConvertPlugin(OfxImageEffectHandle handle)
     setSupportsOpenGLAndTileInfo();
 #endif
 
+    if (!hostConfigSource().empty()) {
+        _ocioConfigFile->setIsSecret(true);
+    }
+
     loadConfig(0.);
 }
 
@@ -247,9 +256,10 @@ OCIOLogConvertPlugin::~OCIOLogConvertPlugin()
 void
 OCIOLogConvertPlugin::loadConfig(double time)
 {
-    string filename;
-
-    _ocioConfigFile->getValueAtTime(time, filename);
+    string filename = hostConfigSource();
+    if (filename.empty()) {
+        _ocioConfigFile->getValueAtTime(time, filename);
+    }
 
     if (filename == _ocioConfigFileName) {
         return;
@@ -763,11 +773,13 @@ OCIOLogConvertPlugin::changedParam(const InstanceChangedArgs& args,
 {
     // must clear persistent message, or render() is not called by Nuke after an error
     clearPersistentMessage();
-    if (paramName == kOCIOParamConfigFile) {
+    if ((paramName == kOCIOParamConfigFile) && (args.reason != eChangeTime)) {
         loadConfig(args.time); // re-load the new OCIO config
         if (!_config && (args.reason == eChangeUserEdit)) {
-            string filename;
-            _ocioConfigFile->getValue(filename);
+            string filename = hostConfigSource();
+            if (filename.empty()) {
+                _ocioConfigFile->getValue(filename);
+            }
             sendMessage(Message::eMessageError, "", string("Cannot load OCIO config file \"") + filename + '"');
         }
     } else if (paramName == kOCIOHelpButton) {

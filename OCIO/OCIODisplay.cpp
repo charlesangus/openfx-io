@@ -1040,6 +1040,20 @@ OCIODisplayPlugin::changedParam(const InstanceChangedArgs& args,
     clearPersistentMessage();
 
     AutoSetAndRestoreThreadLocale locale;
+    if ((paramName == kOCIOParamConfigFile) && (args.reason != eChangeTime)) {
+        _ocio->changedParam(args, paramName);
+        if (_displayChoice && _viewChoice) {
+            OCIO::ConstConfigRcPtr newConfig = _ocio->getConfig();
+            buildDisplayMenu(newConfig, _displayChoice);
+            string display;
+            _display->getValue(display);
+            buildViewMenu(newConfig, _viewChoice, display.c_str());
+            displayCheck(args.time);
+            viewCheck(args.time);
+        }
+
+        return;
+    }
     OCIO::ConstConfigRcPtr config = _ocio->getConfig();
 
     if (!config) {
