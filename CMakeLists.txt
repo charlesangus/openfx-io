@@ -169,14 +169,10 @@ file(GLOB IO_SOURCES
 )
 
 file(GLOB IO_RESOURCES_EXR
-  "EXR/fr.inria.openfx.ReadEXR.png"
-  "EXR/fr.inria.openfx.ReadEXR.svg"
   "EXR/fr.inria.openfx.WriteEXR.png"
   "EXR/fr.inria.openfx.WriteEXR.svg"
 )
 file(GLOB IO_RESOURCES_FFMPEG
-  "FFmpeg/fr.inria.openfx.ReadFFmpeg.png"
-  "FFmpeg/fr.inria.openfx.ReadFFmpeg.svg"
   "FFmpeg/fr.inria.openfx.WriteFFmpeg.png"
   "FFmpeg/fr.inria.openfx.WriteFFmpeg.svg"
 )
@@ -193,14 +189,10 @@ file(GLOB IO_RESOURCES_OPENIMAGEIO
   "OIIO/fr.inria.openfx.OIIOResize.svg"
   "OIIO/fr.inria.openfx.OIIOText.png"
   "OIIO/fr.inria.openfx.OIIOText.svg"
-  "OIIO/fr.inria.openfx.ReadOIIO.png"
-  "OIIO/fr.inria.openfx.ReadOIIO.svg"
   "OIIO/fr.inria.openfx.WriteOIIO.png"
   "OIIO/fr.inria.openfx.WriteOIIO.svg"
 )
 file(GLOB IO_RESOURCES_PNG
-  "PNG/fr.inria.openfx.ReadPNG.png"
-  "PNG/fr.inria.openfx.ReadPNG.svg"
   "PNG/fr.inria.openfx.WritePNG.png"
   "PNG/fr.inria.openfx.WritePNG.svg"
 )
@@ -211,8 +203,6 @@ file(GLOB IO_RESOURCES_SEEXPR
   "SeExpr/fr.inria.openfx.SeExprSimple.svg"
 )
 file(GLOB IO_RESOURCES
-  "PFM/fr.inria.openfx.ReadPFM.png"
-  "PFM/fr.inria.openfx.ReadPFM.svg"
   "PFM/fr.inria.openfx.WritePFM.png"
   "PFM/fr.inria.openfx.WritePFM.svg"
   "RunScript/fr.inria.openfx.RunScript.png"
@@ -248,6 +238,11 @@ if(${SEEXPR2_FOUND})
   list(APPEND IO_RESOURCES ${IO_RESOURCES_SEEXPR})
   list(APPEND IO_SOURCES ${IO_SOURCES_SEEXPR})
 endif()
+
+# The host's native Read node replaces the reader plugins; each one registers
+# its own factory from its own translation unit, so excluding the file also
+# removes the plugin.
+list(FILTER IO_SOURCES EXCLUDE REGEX "/Read[A-Za-z0-9]+\\.cpp$")
 
 add_library(IO SHARED ${IO_SOURCES} ${SUPPORT_SOURCES})
 SET_TARGET_PROPERTIES(IO PROPERTIES PREFIX "")
