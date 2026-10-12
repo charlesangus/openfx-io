@@ -121,12 +121,6 @@ file(GLOB SUPPORT_SOURCES
 #add_library(Support STATIC )
 #target_compile_definitions(Support PRIVATE OFX_SUPPORTS_OPENGLRENDER OFX_EXTENSIONS_TUTTLE OFX_EXTENSIONS_NUKE OFX_EXTENSIONS_NATRON OFX_EXTENSIONS_VEGAS NOMINMAX)
 
-file(GLOB IO_SOURCES_EXR
-  "EXR/*.cpp"
-)
-file(GLOB IO_SOURCES_FFMPEG
-  "FFmpeg/*.cpp"
-)
 file(GLOB IO_SOURCES_OPENCOLORIO
   "OCIO/*.cpp"
 )
@@ -134,10 +128,6 @@ file(GLOB IO_SOURCES_OPENIMAGEIO
   "OIIO/*.cpp"
   "SupportExt/ofxsOGLTextRenderer.cpp"
   "SupportExt/ofxsOGLFontData.cpp"
-)
-file(GLOB IO_SOURCES_PNG
-  "PNG/*.cpp"
-  "SupportExt/ofxsLut.cpp"
 )
 file(GLOB IO_SOURCES_SEEXPR
   "SeExpr/*.cpp"
@@ -151,7 +141,6 @@ file(GLOB IO_SOURCES_SEEXPR
   "SupportExt/ofxsTransformInteract.cpp"
 )
 file(GLOB IO_SOURCES
-  "PFM/*.cpp"
   "IOSupport/*.cpp"
   "IOSupport/*.h"
   "IOSupport/SequenceParsing/*.cpp"
@@ -168,18 +157,6 @@ file(GLOB IO_SOURCES
   "SupportExt/glad/*.h"
 )
 
-file(GLOB IO_RESOURCES_EXR
-  "EXR/fr.inria.openfx.ReadEXR.png"
-  "EXR/fr.inria.openfx.ReadEXR.svg"
-  "EXR/fr.inria.openfx.WriteEXR.png"
-  "EXR/fr.inria.openfx.WriteEXR.svg"
-)
-file(GLOB IO_RESOURCES_FFMPEG
-  "FFmpeg/fr.inria.openfx.ReadFFmpeg.png"
-  "FFmpeg/fr.inria.openfx.ReadFFmpeg.svg"
-  "FFmpeg/fr.inria.openfx.WriteFFmpeg.png"
-  "FFmpeg/fr.inria.openfx.WriteFFmpeg.svg"
-)
 file(GLOB IO_RESOURCES_OPENCOLORIO
   "OCIO/fr.inria.openfx.OCIOCDLTransform.png"
   "OCIO/fr.inria.openfx.OCIOColorSpace.png"
@@ -193,16 +170,6 @@ file(GLOB IO_RESOURCES_OPENIMAGEIO
   "OIIO/fr.inria.openfx.OIIOResize.svg"
   "OIIO/fr.inria.openfx.OIIOText.png"
   "OIIO/fr.inria.openfx.OIIOText.svg"
-  "OIIO/fr.inria.openfx.ReadOIIO.png"
-  "OIIO/fr.inria.openfx.ReadOIIO.svg"
-  "OIIO/fr.inria.openfx.WriteOIIO.png"
-  "OIIO/fr.inria.openfx.WriteOIIO.svg"
-)
-file(GLOB IO_RESOURCES_PNG
-  "PNG/fr.inria.openfx.ReadPNG.png"
-  "PNG/fr.inria.openfx.ReadPNG.svg"
-  "PNG/fr.inria.openfx.WritePNG.png"
-  "PNG/fr.inria.openfx.WritePNG.svg"
 )
 file(GLOB IO_RESOURCES_SEEXPR
   "SeExpr/fr.inria.openfx.SeExpr.png"
@@ -211,18 +178,9 @@ file(GLOB IO_RESOURCES_SEEXPR
   "SeExpr/fr.inria.openfx.SeExprSimple.svg"
 )
 file(GLOB IO_RESOURCES
-  "PFM/fr.inria.openfx.ReadPFM.png"
-  "PFM/fr.inria.openfx.ReadPFM.svg"
-  "PFM/fr.inria.openfx.WritePFM.png"
-  "PFM/fr.inria.openfx.WritePFM.svg"
   "RunScript/fr.inria.openfx.RunScript.png"
   "RunScript/fr.inria.openfx.RunScript.svg"
 )
-
-if(${OPENEXR_FOUND})
-  list(APPEND IO_RESOURCES ${IO_RESOURCES_EXR})
-  list(APPEND IO_SOURCES ${IO_SOURCES_EXR})
-endif()
 
 if(${OPENCOLORIO_FOUND})
   list(APPEND IO_RESOURCES ${IO_RESOURCES_OPENCOLORIO})
@@ -234,20 +192,16 @@ if(${OPENIMAGEIO_FOUND})
   list(APPEND IO_SOURCES ${IO_SOURCES_OPENIMAGEIO})
 endif()
 
-if(${FFMPEG_FOUND})
-  list(APPEND IO_RESOURCES ${IO_RESOURCES_FFMPEG})
-  list(APPEND IO_SOURCES ${IO_SOURCES_FFMPEG})
-endif()
-
-if(${PNG_FOUND})
-  list(APPEND IO_RESOURCES ${IO_RESOURCES_PNG})
-  list(APPEND IO_SOURCES ${IO_SOURCES_PNG})
-endif()
-
 if(${SEEXPR2_FOUND})
   list(APPEND IO_RESOURCES ${IO_RESOURCES_SEEXPR})
   list(APPEND IO_SOURCES ${IO_SOURCES_SEEXPR})
 endif()
+
+# The host's native Read and Write nodes replace the reader and writer
+# plugins; each one registers its own factory from its own translation unit,
+# so excluding the file also removes the plugin. GenericReader.cpp and
+# GenericWriter.cpp do not match and stay.
+list(FILTER IO_SOURCES EXCLUDE REGEX "/(Read|Write)[A-Za-z0-9]+\\.cpp$")
 
 add_library(IO SHARED ${IO_SOURCES} ${SUPPORT_SOURCES})
 SET_TARGET_PROPERTIES(IO PROPERTIES PREFIX "")
@@ -346,36 +300,6 @@ if(${OPENIMAGEIO_FOUND})
   endif()
 else()
   message(STATUS "  Not adding OpenImageIO nodes")
-endif()
-
-if(${FFMPEG_FOUND})
-  message(STATUS "  Adding FFmpeg nodes")
-  target_compile_definitions(IO PRIVATE OFX_IO_MT_FFMPEG)
-  target_include_directories(IO
-    PUBLIC
-      ${FFMPEG_INCLUDES}
-  )
-  target_link_libraries(IO
-    PUBLIC
-      ${FFMPEG_LIBRARIES}
-  )
-else()
-  message(STATUS "  Not adding FFmpeg nodes")
-endif()
-
-if(${PNG_FOUND})
-  message(STATUS "  Adding PNG nodes")
-  target_compile_definitions(IO PRIVATE ${PNG_DEFINITIONS})
-  target_include_directories(IO
-    PUBLIC
-      ${PNG_INCLUDE_DIRS}
-  )
-  target_link_libraries(IO
-    PUBLIC
-      ${PNG_LIBRARIES}
-  )
-else()
-  message(STATUS "  Not adding PNG nodes")
 endif()
 
 if(${SEEXPR2_FOUND})
